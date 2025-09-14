@@ -1,0 +1,119 @@
+# Vertical Pod Autoscaler for Chattingo Application
+# Automatically adjusts resource requests and limits based on usage
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: chattingo-backend-vpa
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-backend
+    app.kubernetes.io/instance: chattingo-backend-vpa
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: autoscaler
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: application
+  annotations:
+    description: "VPA for Chattingo backend to optimize resource allocation"
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chattingo-backend
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 3
+  resourcePolicy:
+    containerPolicies:
+    - containerName: chattingo-backend
+      minAllowed:
+        cpu: 200m
+        memory: 256Mi
+      maxAllowed:
+        cpu: 2000m
+        memory: 4Gi
+      controlledResources: ["cpu", "memory"]
+      controlledValues: RequestsAndLimits
+    - containerName: mysql-exporter
+      mode: "Off"  # Don't autoscale sidecar containers
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: chattingo-frontend-vpa
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-frontend
+    app.kubernetes.io/instance: chattingo-frontend-vpa
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: autoscaler
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: presentation
+  annotations:
+    description: "VPA for Chattingo frontend to optimize resource allocation"
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chattingo-frontend
+  updatePolicy:
+    updateMode: "Auto"
+    minReplicas: 2
+  resourcePolicy:
+    containerPolicies:
+    - containerName: chattingo-frontend
+      minAllowed:
+        cpu: 50m
+        memory: 64Mi
+      maxAllowed:
+        cpu: 500m
+        memory: 512Mi
+      controlledResources: ["cpu", "memory"]
+      controlledValues: RequestsAndLimits
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: mysql-vpa
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-vpa
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: autoscaler
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: data
+  annotations:
+    description: "VPA for MySQL database to optimize resource allocation"
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: mysql-statefulset
+  updatePolicy:
+    updateMode: "Initial"  # Only set resources on pod creation, not during runtime
+  resourcePolicy:
+    containerPolicies:
+    - containerName: mysql
+      minAllowed:
+        cpu: 200m
+        memory: 256Mi
+      maxAllowed:
+        cpu: 2000m
+        memory: 8Gi
+      controlledResources: ["cpu", "memory"]
+      controlledValues: RequestsAndLimits
+    - containerName: mysql-exporter
+      minAllowed:
+        cpu: 10m
+        memory: 32Mi
+      maxAllowed:
+        cpu: 200m
+        memory: 256Mi
+      controlledResources: ["cpu", "memory"]
+      controlledValues: RequestsAndLimits

@@ -1,0 +1,85 @@
+# Namespace configuration for Chattingo Application
+# Organizes resources into logical groups with proper labels and annotations
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chattingo
+  labels:
+    name: chattingo
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-prod
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    environment: production
+    tier: application
+  annotations:
+    description: "Main namespace for Chattingo chat application"
+    contact: "adityagaikwad888@gmail.com"
+    version: "1.0.0"
+    created-by: "chattingo-k8s-deployment"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chattingo-monitoring
+  labels:
+    name: chattingo-monitoring
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-monitoring
+    app.kubernetes.io/version: "1.0.0" 
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    environment: production
+    tier: monitoring
+  annotations:
+    description: "Monitoring namespace for Chattingo application (Prometheus, Grafana, etc.)"
+    contact: "adityagaikwad888@gmail.com"
+    version: "1.0.0"
+    created-by: "chattingo-k8s-deployment"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chattingo-logging
+  labels:
+    name: chattingo-logging
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-logging
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    environment: production
+    tier: logging
+  annotations:
+    description: "Logging namespace for Chattingo application (Elasticsearch, Kibana, Filebeat)"
+    contact: "adityagaikwad888@gmail.com"
+    version: "1.0.0"
+    created-by: "chattingo-k8s-deployment"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    name: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: ingress-controller
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    environment: production
+    tier: infrastructure
+  annotations:
+    description: "Ingress controller namespace for external traffic routing"
+    contact: "adityagaikwad888@gmail.com"
+    version: "1.0.0"
+    created-by: "chattingo-k8s-deployment"

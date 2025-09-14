@@ -1,0 +1,284 @@
+# Chattingo Backend Deployment
+# Spring Boot application with WebSocket support and comprehensive monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chattingo-backend
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-backend
+    app.kubernetes.io/instance: chattingo-backend
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: application
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Chattingo backend API server with WebSocket support"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chattingo-backend
+      app.kubernetes.io/instance: chattingo-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chattingo-backend
+        app.kubernetes.io/instance: chattingo-backend
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: chattingo-platform
+        app.kubernetes.io/managed-by: kubernetes
+        tier: application
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+        co.elastic.logs/enabled: "true"
+        co.elastic.logs/json.message_key: "message"
+        co.elastic.logs/json.keys_under_root: "true"
+    spec:
+      priorityClassName: chattingo-high-priority
+      serviceAccountName: default
+      nodeSelector:
+        node-type: backend
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      
+      initContainers:
+      - name: wait-for-mysql
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for MySQL to be ready..."
+          until nc -z mysql-service 3306; do
+            echo "MySQL is not ready yet... waiting 5 seconds"
+            sleep 5
+          done
+          echo "MySQL is ready!"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+
+      containers:
+      - name: chattingo-backend
+        image: chattingo/backend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        env:
+        # Database Configuration from ConfigMap and Secrets
+        - name: SPRING_DATASOURCE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: SPRING_DATASOURCE_URL
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: SPRING_DATASOURCE_USERNAME
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: SPRING_DATASOURCE_PASSWORD
+        - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: SPRING_DATASOURCE_DRIVER_CLASS_NAME
+        
+        # JWT Configuration
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: JWT_SECRET
+        
+        # Application Configuration
+        - name: SPRING_PROFILES_ACTIVE
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: SPRING_PROFILES_ACTIVE
+        - name: SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: SERVER_PORT
+        - name: JAVA_OPTS
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: JAVA_OPTS
+        
+        # CORS Configuration
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: CORS_ALLOWED_ORIGINS
+        - name: CORS_ALLOWED_METHODS
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: CORS_ALLOWED_METHODS
+        
+        # Logging Configuration
+        - name: LOG_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: LOG_PATH
+        
+        # Pod Information
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+
+        volumeMounts:
+        - name: chattingo-logs
+          mountPath: /var/log/chattingo
+        - name: tmp-volume
+          mountPath: /tmp
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+            ephemeral-storage: "1Gi"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+            ephemeral-storage: "2Gi"
+
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 20
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+
+      volumes:
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: 1Gi
+
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      
+      # Affinity rules for optimal pod placement
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: tier
+                operator: In
+                values:
+                - application
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - chattingo-backend
+              topologyKey: kubernetes.io/hostname
+
+      # Tolerations for backend nodes
+      tolerations:
+      - key: node-type
+        operator: Equal
+        value: backend
+        effect: NoSchedule
+
+      imagePullSecrets:
+      - name: docker-registry-secret

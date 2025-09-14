@@ -1,0 +1,249 @@
+# Hackathon Resource Optimization Patches
+# Optimized for 4GB RAM, 2 CPU cores, 2-3 concurrent users
+# This file contains Kustomize patches to reduce resource usage
+
+# Backend - Single instance with minimal resources
+- target:
+    kind: Deployment
+    name: chattingo-backend
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+          ephemeral-storage: "500Mi"
+        limits:
+          memory: "512Mi"
+          cpu: "300m"
+          ephemeral-storage: "1Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/env
+      value:
+        - name: SPRING_DATASOURCE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: chattingo-backend-config
+              key: SPRING_DATASOURCE_URL
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: SPRING_DATASOURCE_USERNAME
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: SPRING_DATASOURCE_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: chattingo-backend-secrets
+              key: JWT_SECRET
+        - name: SPRING_PROFILES_ACTIVE
+          value: "hackathon"
+        - name: SERVER_PORT
+          value: "8080"
+        - name: JAVA_OPTS
+          value: "-Xmx400m -Xms200m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC"
+        - name: LOG_PATH
+          value: "/var/log/chattingo"
+
+# Frontend - Single instance with minimal resources
+- target:
+    kind: Deployment
+    name: chattingo-frontend
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+        limits:
+          memory: "128Mi"
+          cpu: "100m"
+
+# MySQL - Lightweight configuration
+- target:
+    kind: StatefulSet
+    name: mysql
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "512Mi"
+          cpu: "200m"
+    - op: replace
+      path: /spec/template/spec/containers/0/env
+      value:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: mysql-config
+              key: MYSQL_DATABASE
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secrets
+              key: MYSQL_PASSWORD
+        # Hackathon MySQL optimizations
+        - name: innodb_buffer_pool_size
+          value: "128M"
+        - name: max_connections
+          value: "50"
+        - name: innodb_log_file_size
+          value: "32M"
+        - name: query_cache_size
+          value: "16M"
+
+# Elasticsearch - Minimal configuration for hackathon
+- target:
+    kind: Deployment
+    name: elasticsearch
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "512Mi"
+          cpu: "200m"
+        limits:
+          memory: "768Mi"
+          cpu: "300m"
+    - op: replace
+      path: /spec/template/spec/containers/0/env
+      value:
+        - name: discovery.type
+          value: "single-node"
+        - name: ES_JAVA_OPTS
+          value: "-Xms256m -Xmx512m"
+        - name: xpack.security.enabled
+          value: "false"
+        - name: cluster.name
+          value: "chattingo-hackathon"
+        - name: node.name
+          value: "chattingo-es-hackathon"
+        - name: network.host
+          value: "0.0.0.0"
+        - name: bootstrap.memory_lock
+          value: "false"
+        # Reduce index settings for hackathon
+        - name: index.number_of_replicas
+          value: "0"
+        - name: index.refresh_interval
+          value: "30s"
+
+# Kibana - Lightweight configuration
+- target:
+    kind: Deployment
+    name: kibana
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "384Mi"
+          cpu: "200m"
+
+# Filebeat - Minimal resource usage
+- target:
+    kind: DaemonSet
+    name: filebeat
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+        limits:
+          memory: "128Mi"
+          cpu: "100m"
+
+# Prometheus - Lightweight monitoring for hackathon
+- target:
+    kind: Deployment
+    name: prometheus
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "384Mi"
+          cpu: "150m"
+
+# Grafana - Minimal configuration
+- target:
+    kind: Deployment
+    name: grafana
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "128Mi"
+          cpu: "50m"
+        limits:
+          memory: "256Mi"
+          cpu: "100m"
+
+# S3 Uploader - Reduce frequency for hackathon
+- target:
+    kind: Deployment
+    name: s3-uploader
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "64Mi"
+          cpu: "25m"
+        limits:
+          memory: "128Mi"
+          cpu: "50m"

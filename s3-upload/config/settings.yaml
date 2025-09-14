@@ -1,0 +1,27 @@
+# S3 Log Uploader Configuration
+
+# Log directory to monitor (where Kubernetes pods write logs)
+log_path: "/var/log/chattingo"
+
+# AWS S3 Configuration
+s3:
+  bucket_name: "chattingo-logs"
+  region: "us-east-1"
+  # Note: AWS credentials should be configured via:
+  # - AWS CLI: aws configure
+  # - IAM role (if running on EC2)
+  # - Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+
+# Cleanup Configuration
+cleanup:
+  max_age_days: 7                    # Delete local files older than this
+  delete_after_upload: true          # Delete local files after successful S3 upload
+
+# Schedule Configuration
+schedule:
+  check_interval_minutes: 30         # How often to check for new log files
+
+# Logging Configuration (optional)
+logging:
+  level: "INFO"                      # DEBUG, INFO, WARNING, ERROR
+  log_file: "/var/log/s3-uploader.log"

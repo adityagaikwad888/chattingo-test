@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  sonarqube:
+    image: sonarqube:10-community
+    container_name: sonarqube
+    env_file:
+      - .env.sonarqube
+    ports:
+      - "9000:9000"
+    depends_on:
+      - postgres
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    restart: unless-stopped
+    
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '0.5'         
+        reservations:
+          memory: 512M
+          cpus: '0.3'
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 120s
+      timeout: 60s
+      retries: 8
+      start_period: 800s
+    
+    networks:
+      - sonarqube_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_sonar
+    env_file:
+      - .env.sonarqube
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+    
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    
+    networks:
+      - sonarqube_network
+    
+    # Tuning for low resources
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=128MB
+      -c work_mem=2MB
+      -c max_wal_size=1GB
+
+
+volumes:
+  sonarqube_data:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  sonarqube_logs:
+    driver: local
+  postgresql_data:
+    driver: local
+
+
+networks:
+  sonarqube_network:
+    driver: bridge

@@ -1,0 +1,218 @@
+# Ingress Configuration for Chattingo Application
+# Provides external access with SSL termination and routing rules
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chattingo-ingress
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-ingress
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: infrastructure
+  annotations:
+    # Nginx Ingress Controller annotations
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # cert-manager annotations for automatic certificate provisioning
+    cert-manager.io/cluster-issuer: "chattingo-ca-issuer"
+    cert-manager.io/common-name: "chattingo.local"
+    
+    # CORS Configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://chattingo.local"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Forwarded-For,X-Forwarded-Proto,X-Forwarded-Host"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+    
+    # WebSocket Support
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/rate-limit-connections: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "10"
+    
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:;" always;
+    
+    # Compression
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      gzip on;
+      gzip_comp_level 6;
+      gzip_min_length 1000;
+      gzip_proxied any;
+      gzip_vary on;
+      gzip_types
+        text/css
+        text/javascript
+        text/xml
+        text/plain
+        text/x-component
+        application/javascript
+        application/json
+        application/xml
+        application/rss+xml
+        font/truetype
+        font/opentype
+        application/vnd.ms-fontobject
+        image/svg+xml;
+
+spec:
+  tls:
+  - hosts:
+    - chattingo.local
+    - www.chattingo.local
+    secretName: chattingo-tls-secret
+  
+  rules:
+  # Main domain
+  - host: chattingo.local
+    http:
+      paths:
+      # Frontend routes
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+      
+      # API routes
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8080
+      
+      # WebSocket routes
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8080
+      
+      # Actuator endpoints (for monitoring)
+      - path: /actuator
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8080
+
+  # WWW subdomain redirect
+  - host: www.chattingo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+
+---
+# Ingress for monitoring services
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chattingo-monitoring-ingress
+  namespace: chattingo-monitoring
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-monitoring-ingress
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: monitoring-ingress
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: monitoring
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Monitoring Dashboard - Authentication Required"
+    
+    # cert-manager annotations for monitoring services
+    cert-manager.io/cluster-issuer: "chattingo-ca-issuer"
+    cert-manager.io/common-name: "grafana.chattingo.local"
+    
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+
+spec:
+  tls:
+  - hosts:
+    - monitoring.chattingo.local
+    - grafana.chattingo.local
+    - prometheus.chattingo.local
+    secretName: chattingo-tls-secret
+
+  rules:
+  # Grafana Dashboard
+  - host: grafana.chattingo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-service
+            port:
+              number: 3000
+
+  # Prometheus Dashboard
+  - host: prometheus.chattingo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-service
+            port:
+              number: 9090
+
+  # General monitoring subdomain
+  - host: monitoring.chattingo.local
+    http:
+      paths:
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-service
+            port:
+              number: 3000
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-service
+            port:
+              number: 9090

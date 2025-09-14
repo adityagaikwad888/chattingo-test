@@ -1,0 +1,280 @@
+# ConfigMaps for Chattingo Application
+# Contains non-sensitive configuration data for the application
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chattingo-backend-config
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-backend
+    app.kubernetes.io/instance: chattingo-backend
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: application
+data:
+  # Database Configuration
+  SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-service:3306/chattingo_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true"
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
+  
+  # JWT Configuration
+  JWT_EXPIRATION: "86400000"
+  
+  # CORS Configuration
+  CORS_ALLOWED_ORIGINS: "http://localhost,http://chattingo.local,http://frontend-service"
+  CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+  CORS_ALLOWED_HEADERS: "Origin,Content-Type,Accept,Authorization,Access-Control-Request-Method,Access-Control-Request-Headers"
+  CORS_ALLOW_CREDENTIALS: "true"
+  
+  # Logging Configuration
+  LOG_PATH: "/var/log/chattingo"
+  LOGGING_LEVEL_COM_CHATTINGO: "INFO"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: "WARN"
+  LOGGING_LEVEL_ORG_HIBERNATE: "WARN"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_SOCKET: "DEBUG"
+  
+  # Log Rotation Configuration
+  LOG_ROTATION_ENABLED: "true"
+  LOG_ROTATION_MAX_AGE_DAYS: "7"
+  LOG_ROTATION_MAX_SIZE_MB: "100"
+  
+  # AWS S3 Configuration
+  AWS_REGION: "ap-south-1"
+  S3_BUCKET: "chattingo-logs-secure-2025"
+  
+  # Server Configuration
+  SERVER_PORT: "8080"
+  SERVER_SERVLET_CONTEXT_PATH: "/"
+  
+  # Application Configuration
+  SPRING_APPLICATION_NAME: "chattingo-backend"
+  SPRING_PROFILES_ACTIVE: "production"
+  
+  # Timezone Configuration
+  SPRING_JACKSON_TIME_ZONE: "Asia/Kolkata"
+  USER_TIMEZONE: "Asia/Kolkata"
+  
+  # Performance Configuration
+  SPRING_TASK_EXECUTION_POOL_CORE_SIZE: "10"
+  SPRING_TASK_EXECUTION_POOL_MAX_SIZE: "50"
+  SPRING_TASK_EXECUTION_POOL_QUEUE_CAPACITY: "100"
+  SPRING_TASK_SCHEDULING_POOL_SIZE: "5"
+  
+  # JVM Configuration
+  JAVA_OPTS: "-Xmx1g -Xms512m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+UseStringDeduplication"
+  
+  # Health Check Configuration
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus,logfile,loggers"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "when-authorized"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_HEALTH_LIVENESSSTATE_ENABLED: "true"
+  MANAGEMENT_HEALTH_READINESSSTATE_ENABLED: "true"
+  MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED: "true"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chattingo-frontend-config
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-frontend
+    app.kubernetes.io/instance: chattingo-frontend
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: presentation
+data:
+  # Backend API Configuration
+  REACT_APP_API_BASE_URL: "https://chattingo.local/api"
+  REACT_APP_WS_BASE_URL: "wss://chattingo.local/ws"
+  
+  # Application Configuration
+  REACT_APP_NAME: "Chattingo"
+  REACT_APP_VERSION: "1.0.0"
+  REACT_APP_ENVIRONMENT: "production"
+  
+  # Feature Flags
+  REACT_APP_ENABLE_ANALYTICS: "true"
+  REACT_APP_ENABLE_NOTIFICATIONS: "true"
+  REACT_APP_ENABLE_DARK_MODE: "true"
+  
+  # Build Configuration
+  GENERATE_SOURCEMAP: "false"
+  REACT_APP_BUILD_VERSION: "1.0.0"
+  REACT_APP_BUILD_DATE: "2025-09-10"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: data
+data:
+  # MySQL Configuration
+  MYSQL_DATABASE: "chattingo_db"
+  MYSQL_CHARSET: "utf8mb4"
+  MYSQL_COLLATION: "utf8mb4_unicode_ci"
+  
+  # Performance Configuration
+  max_connections: "200"
+  innodb_buffer_pool_size: "256M"
+  innodb_log_file_size: "64M"
+  innodb_flush_log_at_trx_commit: "2"
+  innodb_flush_method: "O_DIRECT"
+  query_cache_type: "1"
+  query_cache_size: "32M"
+  slow_query_log: "1"
+  long_query_time: "2"
+  
+  # Security Configuration
+  bind-address: "0.0.0.0"
+  skip-name-resolve: "1"
+  
+  # Custom MySQL configuration file
+  my.cnf: |
+    [mysql]
+    default-character-set = utf8mb4
+    
+    [mysqld]
+    # Basic Settings
+    user = mysql
+    default-storage-engine = InnoDB
+    socket = /var/lib/mysql/mysql.sock
+    pid-file = /var/lib/mysql/mysql.pid
+    
+    # Character Set
+    character-set-server = utf8mb4
+    collation-server = utf8mb4_unicode_ci
+    
+    # Connection Settings
+    max_connections = 200
+    max_connect_errors = 1000
+    table_open_cache = 2000
+    max_allowed_packet = 16M
+    binlog_cache_size = 1M
+    max_heap_table_size = 64M
+    read_buffer_size = 2M
+    read_rnd_buffer_size = 16M
+    sort_buffer_size = 8M
+    join_buffer_size = 8M
+    thread_cache_size = 8
+    thread_concurrency = 8
+    query_cache_size = 32M
+    query_cache_limit = 2M
+    ft_min_word_len = 4
+    default_table_type = InnoDB
+    thread_stack = 192K
+    transaction_isolation = REPEATABLE-READ
+    tmp_table_size = 64M
+    
+    # InnoDB Settings
+    innodb_buffer_pool_size = 256M
+    innodb_log_file_size = 64M
+    innodb_log_buffer_size = 8M
+    innodb_flush_log_at_trx_commit = 2
+    innodb_lock_wait_timeout = 120
+    innodb_flush_method = O_DIRECT
+    
+    # Logging
+    slow_query_log = 1
+    slow_query_log_file = /var/lib/mysql/mysql-slow.log
+    long_query_time = 2
+    
+    # Security
+    bind-address = 0.0.0.0
+    skip-name-resolve = 1
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-frontend
+    app.kubernetes.io/instance: chattingo-frontend
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: presentation
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_proxied expired no-cache no-store private must-revalidate auth;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/javascript
+            application/xml+rss
+            application/json;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+        add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+        
+        # Handle client-side routing
+        location / {
+            try_files $uri $uri/ /index.html;
+            
+            # Cache static assets
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+        }
+        
+        # API proxy (if needed)
+        location /api/ {
+            proxy_pass http://backend-service:8080/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # WebSocket proxy
+        location /ws/ {
+            proxy_pass http://backend-service:8080/ws/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }

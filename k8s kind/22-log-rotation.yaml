@@ -1,0 +1,291 @@
+---
+# ConfigMap for Log Rotation Scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-rotation-config
+  namespace: chattingo
+  labels:
+    app: log-rotation
+    tier: logging
+data:
+  log-rotation.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Configuration from environment variables
+    LOG_PATH="${LOG_PATH:-/var/log/chattingo}"
+    MAX_AGE_DAYS="${MAX_AGE_DAYS:-7}"
+    MAX_SIZE_MB="${MAX_SIZE_MB:-100}"
+    COMPRESSION_ENABLED="${COMPRESSION_ENABLED:-true}"
+    
+    echo "🔄 Starting Chattingo Log Rotation"
+    echo "📂 Log Path: $LOG_PATH"
+    echo "📅 Max Age: $MAX_AGE_DAYS days"
+    echo "💾 Max Size: ${MAX_SIZE_MB}MB"
+    echo "🗜️  Compression: $COMPRESSION_ENABLED"
+    
+    # Function to get file size in MB
+    get_file_size_mb() {
+        local file="$1"
+        if [ -f "$file" ]; then
+            local size_bytes=$(stat -c%s "$file" 2>/dev/null || echo "0")
+            echo $((size_bytes / 1024 / 1024))
+        else
+            echo "0"
+        fi
+    }
+    
+    # Function to get file age in days
+    get_file_age_days() {
+        local file="$1"
+        if [ -f "$file" ]; then
+            local file_time=$(stat -c%Y "$file" 2>/dev/null || echo "0")
+            local current_time=$(date +%s)
+            echo $(((current_time - file_time) / 86400))
+        else
+            echo "0"
+        fi
+    }
+    
+    # Function to rotate a log file
+    rotate_log_file() {
+        local log_file="$1"
+        local category="$2"
+        
+        if [ ! -f "$log_file" ]; then
+            echo "⚠️  File not found: $log_file"
+            return
+        fi
+        
+        local file_size=$(get_file_size_mb "$log_file")
+        local file_age=$(get_file_age_days "$log_file")
+        
+        echo "📄 Processing: $log_file (${file_size}MB, ${file_age} days old)"
+        
+        # Check if rotation is needed
+        local should_rotate=false
+        if [ "$file_size" -gt "$MAX_SIZE_MB" ]; then
+            echo "📊 Size limit exceeded: ${file_size}MB > ${MAX_SIZE_MB}MB"
+            should_rotate=true
+        elif [ "$file_age" -gt "$MAX_AGE_DAYS" ]; then
+            echo "📅 Age limit exceeded: ${file_age} days > ${MAX_AGE_DAYS} days"
+            should_rotate=true
+        fi
+        
+        if [ "$should_rotate" = true ]; then
+            # Create timestamped filename
+            local timestamp=$(date '+%Y%m%d_%H%M%S')
+            local filename=$(basename "$log_file" .log)
+            local rotated_file="$LOG_PATH/archive/${category}_${filename}_${timestamp}.log"
+            
+            # Ensure archive directory exists
+            mkdir -p "$LOG_PATH/archive"
+            
+            # Copy file to archive (preserve original for continued logging)
+            cp "$log_file" "$rotated_file"
+            
+            # Truncate original file instead of deleting (keeps file handle alive)
+            > "$log_file"
+            
+            echo "✅ Rotated: $(basename "$log_file") -> archive/$(basename "$rotated_file")"
+            
+            # Compress if enabled
+            if [ "$COMPRESSION_ENABLED" = "true" ]; then
+                gzip "$rotated_file"
+                echo "🗜️  Compressed: $(basename "$rotated_file").gz"
+            fi
+        else
+            echo "✨ No rotation needed for $(basename "$log_file")"
+        fi
+    }
+    
+    # Function to clean up old archive files
+    cleanup_old_archives() {
+        echo "🧹 Cleaning up old archive files..."
+        
+        local archive_dir="$LOG_PATH/archive"
+        if [ ! -d "$archive_dir" ]; then
+            echo "📁 Archive directory doesn't exist, skipping cleanup"
+            return
+        fi
+        
+        local cleanup_days=$((MAX_AGE_DAYS * 2))  # Keep archives for twice the retention period
+        local deleted_count=0
+        
+        # Find and delete old files
+        find "$archive_dir" -type f \( -name "*.log" -o -name "*.gz" \) -mtime +${cleanup_days} -print0 | \
+        while IFS= read -r -d '' file; do
+            rm -f "$file"
+            deleted_count=$((deleted_count + 1))
+            echo "🗑️  Deleted old archive: $(basename "$file")"
+        done
+        
+        echo "🎯 Cleanup completed, removed old archive files"
+    }
+    
+    # Main rotation logic
+    rotate_category_logs() {
+        local category="$1"
+        local category_dir="$LOG_PATH/$category"
+        
+        echo "📂 Processing category: $category"
+        
+        if [ ! -d "$category_dir" ]; then
+            echo "⚠️  Category directory not found: $category_dir"
+            return
+        fi
+        
+        # Process all .log files in the category
+        find "$category_dir" -name "*.log" -type f | while read -r log_file; do
+            rotate_log_file "$log_file" "$category"
+        done
+    }
+    
+    # Process all log categories
+    CATEGORIES="app auth chat error system websocket elasticsearch kibana filebeat"
+    
+    for category in $CATEGORIES; do
+        rotate_category_logs "$category"
+    done
+    
+    # Cleanup old archives
+    cleanup_old_archives
+    
+    # Log rotation metrics (for monitoring)
+    echo "📊 Log Rotation Summary:"
+    echo "  📁 Total categories processed: $(echo "$CATEGORIES" | wc -w)"
+    echo "  💾 Archive directory size: $(du -sh "$LOG_PATH/archive" 2>/dev/null | cut -f1 || echo "0")"
+    echo "  📄 Active log files: $(find "$LOG_PATH" -name "*.log" -not -path "*/archive/*" | wc -l)"
+    echo "  🗜️  Archived files: $(find "$LOG_PATH/archive" -type f | wc -l 2>/dev/null || echo "0")"
+    
+    echo "🎉 Log rotation completed successfully!"
+
+---
+# Log Rotation CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: log-rotation
+  namespace: chattingo
+  labels:
+    app: log-rotation
+    tier: logging
+spec:
+  # Run every hour at minute 30
+  schedule: "30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: log-rotation
+            tier: logging
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: log-rotator
+            image: busybox:1.35
+            command: ["/bin/sh"]
+            args: ["/scripts/log-rotation.sh"]
+            env:
+            - name: LOG_PATH
+              value: "/var/log/chattingo"
+            - name: MAX_AGE_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: LOG_ROTATION_MAX_AGE_DAYS
+                  optional: true
+            - name: MAX_SIZE_MB
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: LOG_ROTATION_MAX_SIZE_MB
+                  optional: true
+            - name: COMPRESSION_ENABLED
+              value: "true"
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+            volumeMounts:
+            - name: log-scripts
+              mountPath: /scripts
+            - name: chattingo-logs
+              mountPath: /var/log/chattingo
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+          volumes:
+          - name: log-scripts
+            configMap:
+              name: log-rotation-config
+              defaultMode: 0755
+          - name: chattingo-logs
+            persistentVolumeClaim:
+              claimName: chattingo-logs-pvc
+
+---
+# Manual Log Rotation Job (for immediate execution)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: manual-log-rotation
+  namespace: chattingo
+  labels:
+    app: log-rotation
+    tier: logging
+    type: manual
+spec:
+  template:
+    metadata:
+      labels:
+        app: log-rotation
+        tier: logging
+        type: manual
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: log-rotator
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args: ["/scripts/log-rotation.sh"]
+        env:
+        - name: LOG_PATH
+          value: "/var/log/chattingo"
+        - name: MAX_AGE_DAYS
+          value: "7"
+        - name: MAX_SIZE_MB
+          value: "100"
+        - name: COMPRESSION_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 128Mi
+            cpu: 100m
+        volumeMounts:
+        - name: log-scripts
+          mountPath: /scripts
+        - name: chattingo-logs
+          mountPath: /var/log/chattingo
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+      volumes:
+      - name: log-scripts
+        configMap:
+          name: log-rotation-config
+          defaultMode: 0755
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc

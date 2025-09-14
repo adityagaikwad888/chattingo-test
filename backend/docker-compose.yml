@@ -1,0 +1,136 @@
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: chattingo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-chattingo123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-chattingo_db}
+      MYSQL_USER: chattingo
+      MYSQL_PASSWORD: chattingo123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - /var/log/chattingo/mysql:/var/log/mysql
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+
+  # Chattingo Backend Application
+  chattingo-backend:
+    image: adityagaikwad888/chattingo-backend:v1.0.0
+    container_name: chattingo-backend
+    depends_on:
+      - mysql
+    environment:
+      LOG_PATH: /app/logs
+      SPRING_PROFILES_ACTIVE: production
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/chattingo_db?createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-chattingo123}
+      JWT_SECRET: ${JWT_SECRET:-this-is-a-very-long-jwt-secret-key-that-should-be-256-bits-or-32-characters-long}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:80}
+      LOG_ROTATION_ENABLED: true
+      LOG_ROTATION_MAX_AGE_DAYS: 3
+      LOG_ROTATION_MAX_SIZE_MB: 50
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/log/chattingo:/app/logs
+      - ./config:/app/config
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Chattingo Frontend Application
+  chattingo-frontend:
+    image: adityagaikwad888/chattingo-frontend:v1.0.0
+    container_name: chattingo-frontend
+    depends_on:
+      - chattingo-backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_WS_URL=ws://localhost:8080
+    ports:
+      - "3000:80"
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Elasticsearch for Log Storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: chattingo-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - cluster.name=chattingo-logs
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+      - /var/log/chattingo/elasticsearch:/usr/share/elasticsearch/logs
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+
+  # Filebeat for Log Shipping
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: chattingo-filebeat
+    user: root
+    depends_on:
+      - elasticsearch
+      - chattingo-backend
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/log/chattingo:/var/log/chattingo:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+    command: filebeat -e -strict.perms=false
+
+  # Kibana for Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: chattingo-kibana
+    depends_on:
+      - elasticsearch
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - "5601:5601"
+    networks:
+      - chattingo-network
+    restart: unless-stopped
+
+  # Note: S3 log upload service runs on HOST machine (see /s3-upload folder)
+  # This keeps the container lightweight and Kubernetes-ready
+
+networks:
+  chattingo-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+  elasticsearch_data:
+    driver: local

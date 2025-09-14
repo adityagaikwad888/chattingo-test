@@ -1,0 +1,176 @@
+---
+# Persistent Volume for Elasticsearch Data
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: elasticsearch-data-pv
+  labels:
+    app: elasticsearch
+    tier: logging
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: fast-ssd
+  hostPath:
+    path: /var/lib/elasticsearch
+    type: DirectoryOrCreate
+
+---
+# Persistent Volume Claim for Elasticsearch
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-data-pvc
+  namespace: chattingo
+  labels:
+    app: elasticsearch
+    tier: logging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+
+---
+# Persistent Volume for Application Logs
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: chattingo-logs-pv
+  labels:
+    app: chattingo
+    tier: logging
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: shared-logs
+  hostPath:
+    path: /var/log/chattingo
+    type: DirectoryOrCreate
+
+---
+# Persistent Volume Claim for Application Logs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chattingo-logs-pvc
+  namespace: chattingo
+  labels:
+    app: chattingo
+    tier: logging
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: shared-logs
+
+---
+# Storage Class for Fast SSD (Elasticsearch)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+  labels:
+    tier: logging
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# Storage Class for Shared Logs
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: shared-logs
+  labels:
+    tier: logging
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# ConfigMap for Log Directories
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-structure-config
+  namespace: chattingo
+  labels:
+    app: chattingo
+    tier: logging
+data:
+  setup-log-dirs.sh: |
+    #!/bin/bash
+    set -e
+    
+    LOG_BASE_DIR="/var/log/chattingo"
+    
+    echo "📁 Setting up Chattingo log directory structure..."
+    
+    # Create main log directory
+    mkdir -p "$LOG_BASE_DIR"
+    chmod 755 "$LOG_BASE_DIR"
+    
+    # Create category-specific log directories
+    for dir in app auth chat error system websocket elasticsearch kibana filebeat; do
+        mkdir -p "$LOG_BASE_DIR/$dir"
+        chmod 755 "$LOG_BASE_DIR/$dir"
+        echo "✅ Created: $LOG_BASE_DIR/$dir"
+    done
+    
+    # Create archive directory for rotated logs
+    mkdir -p "$LOG_BASE_DIR/archive"
+    chmod 755 "$LOG_BASE_DIR/archive"
+    echo "✅ Created: $LOG_BASE_DIR/archive"
+    
+    echo "🎉 Log directory structure created successfully!"
+
+---
+# Init Container Job to Setup Log Structure
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-log-structure
+  namespace: chattingo
+  labels:
+    app: chattingo
+    tier: logging
+spec:
+  template:
+    metadata:
+      labels:
+        app: chattingo
+        tier: logging
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: setup-logs
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args: ["/scripts/setup-log-dirs.sh"]
+        volumeMounts:
+        - name: log-scripts
+          mountPath: /scripts
+        - name: chattingo-logs
+          mountPath: /var/log/chattingo
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+      volumes:
+      - name: log-scripts
+        configMap:
+          name: log-structure-config
+          defaultMode: 0755
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc

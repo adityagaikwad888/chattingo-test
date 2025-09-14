@@ -1,0 +1,48 @@
+# Jenkins with docker containers as build agents
+
+version: '3.8'
+
+services:
+  jenkins:
+    image: jenkins/jenkins:2.462.3-lts-jdk17
+    container_name: jenkins
+    user: root
+    privileged: true
+    env_file:
+      - .env.jenkins
+    ports:
+      - "8080:8080" 
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '0.8'
+        reservations:
+          memory: 512M
+          cpus: '0.4'
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/login || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 10
+      start_period: 300s
+    
+    networks:
+      - jenkins_network
+
+
+volumes:
+  jenkins_home:
+    driver: local
+
+networks:
+  jenkins_network:
+    driver: bridge

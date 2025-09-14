@@ -1,0 +1,485 @@
+pipeline {
+    agent none
+    
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'prod'],
+            description: 'Target deployment environment'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip running tests'
+        )
+        booleanParam(
+            name: 'DEPLOY_AFTER_BUILD',
+            defaultValue: false,
+            description: 'Deploy to K8s after successful build'
+        )
+    }
+    
+    environment {
+        // Jenkins Managed Credentials
+        DOCKER_HUB_CREDENTIALS = credentials('dockerhub-credentials')
+        DOCKER_USERNAME = 'adityagaikwad888'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        LATEST_TAG = 'latest'
+        GIT_REPO = 'https://github.com/adityagaikwad888/chattingo-test.git'
+        GIT_BRANCH = 'main'
+        
+        // Environment-specific configurations
+        TARGET_ENV = "${params.ENVIRONMENT}"
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 45, unit: 'MINUTES')
+        timestamps()
+        skipDefaultCheckout()
+    }
+    
+    stages {
+        stage('Checkout & Environment Setup') {
+            agent any
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/${GIT_BRANCH}"]],
+                    userRemoteConfigs: [[url: "${GIT_REPO}"]]
+                ])
+                
+                script {
+                    echo "🔧 Setting up environment: ${TARGET_ENV}"
+                    
+                    // Fetch environment file from Jenkins credentials based on TARGET_ENV
+                    if (TARGET_ENV == 'dev') {
+                        withCredentials([file(credentialsId: 'env-file-dev', variable: 'ENV_FILE')]) {
+                            sh '''
+                                echo "📋 Loading development environment file from Jenkins credentials..."
+                                cp "$ENV_FILE" .env.build
+                                echo "✅ Development environment file loaded successfully"
+                            '''
+                        }
+                    } else if (TARGET_ENV == 'staging') {
+                        withCredentials([file(credentialsId: 'env-file-staging', variable: 'ENV_FILE')]) {
+                            sh '''
+                                echo "📋 Loading staging environment file from Jenkins credentials..."
+                                cp "$ENV_FILE" .env.build
+                                echo "✅ Staging environment file loaded successfully"
+                            '''
+                        }
+                    } else if (TARGET_ENV == 'prod') {
+                        withCredentials([file(credentialsId: 'env-file-prod', variable: 'ENV_FILE')]) {
+                            sh '''
+                                echo "📋 Loading production environment file from Jenkins credentials..."
+                                cp "$ENV_FILE" .env.build
+                                echo "✅ Production environment file loaded successfully"
+                            '''
+                        }
+                    } else {
+                        error("❌ Unsupported environment: ${TARGET_ENV}. Supported: dev, staging, prod")
+                    }
+                    
+                    // Validate environment file was loaded correctly
+                    sh '''
+                        echo "� Validating environment file..."
+                        if [ ! -f ".env.build" ]; then
+                            echo "❌ Environment file not found!"
+                            exit 1
+                        fi
+                        
+                        # Check if file has required variables (basic validation)
+                        required_vars=("SPRING_DATASOURCE_URL" "JWT_SECRET" "MYSQL_ROOT_PASSWORD")
+                        missing_vars=()
+                        
+                        for var in "${required_vars[@]}"; do
+                            if ! grep -q "^${var}=" .env.build; then
+                                missing_vars+=("$var")
+                            fi
+                        done
+                        
+                        if [ ${#missing_vars[@]} -gt 0 ]; then
+                            echo "❌ Missing required variables in environment file:"
+                            printf '%s\\n' "${missing_vars[@]}"
+                            exit 1
+                        fi
+                        
+                        echo "✅ Environment file validation passed"
+                        
+                        # Display configuration summary (without secrets)
+                        echo ""
+                        echo "📊 Environment Configuration Summary:"
+                        echo "Environment: ${TARGET_ENV}"
+                        echo "Image Tag: ${IMAGE_TAG}"
+                        echo "Skip Tests: ${params.SKIP_TESTS}"
+                        echo "Deploy After Build: ${params.DEPLOY_AFTER_BUILD}"
+                        
+                        echo ""
+                        echo "🌍 Application Configuration (Non-sensitive):"
+                        grep -E "^(REACT_APP_|SPRING_PROFILES_ACTIVE|PRIMARY_DOMAIN|API_DOMAIN|SERVER_PORT|SPRING_APPLICATION_NAME)" .env.build || echo "No matching config found"
+                        
+                        echo ""
+                        echo "🔐 Security Check - Sensitive variables present:"
+                        sensitive_vars=("JWT_SECRET" "MYSQL_ROOT_PASSWORD" "MYSQL_PASSWORD" "GF_SECURITY_ADMIN_PASSWORD")
+                        for var in "${sensitive_vars[@]}"; do
+                            if grep -q "^${var}=" .env.build; then
+                                echo "✅ $var is configured"
+                            else
+                                echo "⚠️  $var is missing (may be optional)"
+                            fi
+                        done
+                    '''
+                }
+                
+                stash includes: '**', name: 'source-code-with-env'
+            }
+        }
+        
+        stage('Parallel Build & Test') {
+            parallel {
+                stage('Backend Build & Test') {
+                    agent {
+                        docker {
+                            image 'openjdk:17-jdk-slim'
+                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                        }
+                    }
+                    steps {
+                        unstash 'source-code-with-env'
+                        dir('backend') {
+                            script {
+                                sh '''
+                                    echo "☕ Installing Maven and tools..."
+                                    apt-get update -q
+                                    apt-get install -y maven curl
+                                    
+                                    echo "🔧 Loading environment variables for backend build..."
+                                    # Create backend-specific .env for build context
+                                    grep -E "^(SPRING_|JWT_|MYSQL_|SERVER_|LOG_|JAVA_OPTS|CORS_)" ../.env.build > .env || true
+                                    
+                                    echo "📦 Building Backend with Maven..."
+                                    # Export environment variables for Maven build
+                                    set -a
+                                    source .env 2>/dev/null || true
+                                    set +a
+                                    
+                                    mvn clean compile -B -q
+                                '''
+                                
+                                // Run tests conditionally
+                                if (!params.SKIP_TESTS) {
+                                    sh '''
+                                        echo "🧪 Running Backend Tests with environment config..."
+                                        set -a
+                                        source .env 2>/dev/null || true
+                                        set +a
+                                        mvn test -B
+                                    '''
+                                } else {
+                                    echo "⏭️ Skipping tests as requested"
+                                }
+                                
+                                sh '''
+                                    echo "🏗️ Packaging Backend JAR..."
+                                    mvn package -DskipTests -B -q
+                                    
+                                    echo "📊 Backend Build Summary:"
+                                    ls -la target/*.jar
+                                '''
+                            }
+                        }
+                        archiveArtifacts artifacts: 'backend/target/*.jar', fingerprint: true
+                        
+                        // Publish test results only if tests were run
+                        script {
+                            if (!params.SKIP_TESTS) {
+                                publishTestResults testResultsPattern: 'backend/target/surefire-reports/*.xml'
+                            }
+                        }
+                        
+                        stash includes: 'backend/**', name: 'backend-artifacts'
+                    }
+                }
+                
+                stage('Frontend Build & Test') {
+                    agent {
+                        docker {
+                            image 'node:18-alpine'
+                            args '-v /var/run/docker.sock:/var/run/docker.sock'
+                        }
+                    }
+                    steps {
+                        unstash 'source-code-with-env'
+                        dir('frontend') {
+                            script {
+                                sh '''
+                                    echo "📦 Installing Frontend Dependencies..."
+                                    npm ci --silent
+                                    
+                                    echo "🔧 Setting up environment variables for frontend..."
+                                    # Extract React environment variables
+                                    grep -E "^(REACT_APP_|GENERATE_SOURCEMAP)" ../.env.build > .env.local || true
+                                    
+                                    echo "📋 Frontend Environment Variables:"
+                                    cat .env.local || echo "No frontend env vars found"
+                                '''
+                                
+                                // Run tests conditionally
+                                if (!params.SKIP_TESTS) {
+                                    sh '''
+                                        echo "🧪 Running Frontend Tests..."
+                                        npm run test -- --coverage --watchAll=false --passWithNoTests
+                                    '''
+                                } else {
+                                    echo "⏭️ Skipping frontend tests as requested"
+                                }
+                                
+                                sh '''
+                                    echo "🏗️ Building Frontend for ${TARGET_ENV}..."
+                                    npm run build
+                                    
+                                    echo "📊 Frontend Build Summary:"
+                                    ls -la build/
+                                    du -sh build/
+                                '''
+                            }
+                        }
+                        archiveArtifacts artifacts: 'frontend/build/**', fingerprint: true
+                        
+                        // Publish coverage report only if tests were run  
+                        script {
+                            if (!params.SKIP_TESTS) {
+                                publishHTML([
+                                    allowMissing: false,
+                                    alwaysLinkToLastBuild: true,
+                                    keepAll: true,
+                                    reportDir: 'frontend/coverage/lcov-report',
+                                    reportFiles: 'index.html',
+                                    reportName: 'Frontend Coverage Report'
+                                ])
+                            }
+                        }
+                        
+                        stash includes: 'frontend/**', name: 'frontend-artifacts'
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Build & Push') {
+            agent {
+                docker {
+                    image 'docker:24-dind'
+                    args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            steps {
+                unstash 'backend-artifacts'
+                unstash 'frontend-artifacts'
+                unstash 'source-code-with-env'
+                
+                script {
+                    // Login to Docker Hub
+                    sh 'echo $DOCKER_HUB_CREDENTIALS_PSW | docker login -u $DOCKER_HUB_CREDENTIALS_USR --password-stdin'
+                    
+                    // Build backend with environment-specific build args
+                    sh '''
+                        echo "🐳 Building Backend Docker Image for ${TARGET_ENV}..."
+                        cd backend
+                        
+                        # Build with environment variables as build args
+                        docker build \
+                            --build-arg ENVIRONMENT=${TARGET_ENV} \
+                            --build-arg SPRING_PROFILES_ACTIVE=${TARGET_ENV} \
+                            --build-arg BUILD_VERSION=${IMAGE_TAG} \
+                            -f Dockerfile \
+                            -t ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG} \
+                            -t ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-latest \
+                            .
+                        
+                        echo "⬆️ Pushing Backend Images..."
+                        docker push ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG}
+                        docker push ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-latest
+                        
+                        # Also push with standard tags for compatibility
+                        docker tag ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG} ${DOCKER_USERNAME}/chattingo-backend:${IMAGE_TAG}
+                        docker tag ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-latest ${DOCKER_USERNAME}/chattingo-backend:latest
+                        docker push ${DOCKER_USERNAME}/chattingo-backend:${IMAGE_TAG}
+                        docker push ${DOCKER_USERNAME}/chattingo-backend:latest
+                    '''
+                    
+                    // Build frontend with environment-specific configuration
+                    sh '''
+                        echo "🐳 Building Frontend Docker Image for ${TARGET_ENV}..."
+                        cd frontend
+                        
+                        docker build \
+                            --build-arg ENVIRONMENT=${TARGET_ENV} \
+                            --build-arg BUILD_VERSION=${IMAGE_TAG} \
+                            -f Dockerfile \
+                            -t ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG} \
+                            -t ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-latest \
+                            .
+                        
+                        echo "⬆️ Pushing Frontend Images..."
+                        docker push ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG}
+                        docker push ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-latest
+                        
+                        # Also push with standard tags for compatibility
+                        docker tag ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG} ${DOCKER_USERNAME}/chattingo-frontend:${IMAGE_TAG}
+                        docker tag ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-latest ${DOCKER_USERNAME}/chattingo-frontend:latest
+                        docker push ${DOCKER_USERNAME}/chattingo-frontend:${IMAGE_TAG}
+                        docker push ${DOCKER_USERNAME}/chattingo-frontend:latest
+                    '''
+                    
+                    // Logout from Docker Hub
+                    sh 'docker logout'
+                }
+            }
+            post {
+                always {
+                    sh '''
+                        echo "🧹 Cleaning up local Docker images..."
+                        docker rmi ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG} || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-latest || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG} || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-latest || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-backend:${IMAGE_TAG} || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-backend:latest || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-frontend:${IMAGE_TAG} || true
+                        docker rmi ${DOCKER_USERNAME}/chattingo-frontend:latest || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Kubernetes Deployment Preparation') {
+            when {
+                allOf {
+                    expression { params.DEPLOY_AFTER_BUILD == true }
+                    anyOf {
+                        branch 'main'
+                        branch 'develop'
+                    }
+                }
+            }
+            agent any
+            steps {
+                unstash 'source-code-with-env'
+                script {
+                    sh '''
+                        echo "🚀 Preparing Kubernetes deployment for ${TARGET_ENV}..."
+                        
+                        # Update Kubernetes manifests with environment-specific images
+                        if [ -d "k8s-kind" ]; then
+                            # Update image tags in deployments
+                            sed -i "s|adityagaikwad888/chattingo-backend:.*|adityagaikwad888/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG}|g" k8s-kind/*.yaml
+                            sed -i "s|adityagaikwad888/chattingo-frontend:.*|adityagaikwad888/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG}|g" k8s-kind/*.yaml
+                            
+                            # Create environment-specific deployment package
+                            echo "📦 Creating deployment package for ${TARGET_ENV}..."
+                            cp .env.build k8s-kind/.env.${TARGET_ENV}
+                            tar -czf deployment-${TARGET_ENV}-${IMAGE_TAG}.tar.gz k8s-kind/
+                            ls -la deployment-*.tar.gz
+                        fi
+                        
+                        # Generate deployment summary
+                        echo "📋 Deployment Summary for ${TARGET_ENV}:"
+                        echo "Backend Image: ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG}"
+                        echo "Frontend Image: ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG}"
+                        echo "Environment: ${TARGET_ENV}"
+                        echo "Build: ${IMAGE_TAG}"
+                    '''
+                }
+                archiveArtifacts artifacts: 'deployment-*.tar.gz', allowEmptyArchive: true, fingerprint: true
+            }
+        }
+        
+        stage('Security & Quality Scan') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            agent {
+                docker {
+                    image 'alpine:latest'
+                }
+            }
+            steps {
+                sh '''
+                    echo "🔒 Running security and quality scans..."
+                    echo "Environment: ${TARGET_ENV}"
+                    echo "Note: Add Trivy, SonarQube, or other security scanning tools here"
+                    
+                    # Example: Install and run Trivy for container scanning
+                    # apk add --no-cache curl
+                    # curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+                    # trivy image ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG}
+                    # trivy image ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG}
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            node('any') {
+                script {
+                    def duration = currentBuild.durationString.replace(' and counting', '')
+                    echo """
+                    🏁 Pipeline execution completed for build #${BUILD_NUMBER}
+                    
+                    📊 Build Summary:
+                    - Environment: ${TARGET_ENV}
+                    - Backend Image: ${DOCKER_USERNAME}/chattingo-backend:${TARGET_ENV}-${IMAGE_TAG}
+                    - Frontend Image: ${DOCKER_USERNAME}/chattingo-frontend:${TARGET_ENV}-${IMAGE_TAG}
+                    - Build Duration: ${duration}
+                    - Tests Skipped: ${params.SKIP_TESTS}
+                    - Deployment Prepared: ${params.DEPLOY_AFTER_BUILD}
+                    """
+                }
+            }
+        }
+        success {
+            node('any') {
+                echo """
+                ✅ BUILD SUCCESSFUL! 
+                
+                🎯 Environment: ${TARGET_ENV}
+                🐳 Images pushed to Docker Hub with environment-specific tags
+                📦 Deployment artifacts ready for ${TARGET_ENV} environment
+                🔐 All secrets managed through Jenkins credentials
+                ⚡ Build optimized with environment-specific configuration
+                """
+            }
+        }
+        failure {
+            node('any') {
+                echo """
+                ❌ BUILD FAILED!
+                
+                💡 Troubleshooting for ${TARGET_ENV} environment:
+                - Check environment file: k8s-kind/env/.env.${TARGET_ENV}
+                - Verify Jenkins credentials are configured
+                - Ensure all required secrets are set
+                - Check build logs for environment-specific errors
+                """
+            }
+        }
+        cleanup {
+            node('any') {
+                cleanWs(
+                    cleanWhenAborted: true,
+                    cleanWhenFailure: true,
+                    cleanWhenNotBuilt: true,
+                    cleanWhenSuccess: true,
+                    cleanWhenUnstable: true,
+                    deleteDirs: true
+                )
+            }
+        }
+    }
+}

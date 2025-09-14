@@ -1,0 +1,33 @@
+# Chattingo Frontend Service
+# Provides load balancing and service discovery for frontend pods
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-frontend
+    app.kubernetes.io/instance: chattingo-frontend
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: presentation
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
+    prometheus.io/path: "/metrics"
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: http
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: chattingo-frontend
+    app.kubernetes.io/instance: chattingo-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  sessionAffinity: None

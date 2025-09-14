@@ -1,0 +1,136 @@
+# Persistent Volume and Persistent Volume Claim for MySQL Database
+# Provides persistent storage for database data with proper backup and recovery options
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-pv
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    type: database-storage
+    tier: data
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: mysql-storage
+  hostPath:
+    path: /var/lib/mysql-data
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    type: database-storage
+    tier: data
+  annotations:
+    description: "PVC for MySQL database persistent storage"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: mysql-storage
+
+---
+# Persistent Volume for application logs
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: logs-pv
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-logs
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    type: logs-storage
+    tier: logging
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: logs-storage
+  hostPath:
+    path: /var/log/chattingo
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logs-pvc
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-logs
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    type: logs-storage
+    tier: logging
+  annotations:
+    description: "PVC for application logs storage"
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: logs-storage
+
+---
+# Storage Class for MySQL
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: mysql-storage
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: storage-class
+    app.kubernetes.io/part-of: chattingo-platform
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+
+---
+# Storage Class for Logs
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: logs-storage
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/component: storage-class
+    app.kubernetes.io/part-of: chattingo-platform
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate  
+allowVolumeExpansion: true
+reclaimPolicy: Retain

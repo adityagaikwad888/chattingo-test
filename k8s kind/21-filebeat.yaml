@@ -1,0 +1,321 @@
+---
+# Filebeat ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: chattingo
+  labels:
+    app: filebeat
+    tier: logging
+data:
+  filebeat.yml: |
+    # Filebeat configuration for Chattingo application
+    filebeat.inputs:
+    # Application logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/app/*.log
+      fields:
+        category: application
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+      multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+      multiline.negate: true
+      multiline.match: after
+      
+    # Authentication logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/auth/*.log
+      fields:
+        category: authentication
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+      
+    # Chat logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/chat/*.log
+      fields:
+        category: chat
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+      
+    # Error logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/error/*.log
+      fields:
+        category: error
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+        severity: error
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+      
+    # System logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/system/*.log
+      fields:
+        category: system
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+      
+    # WebSocket logs
+    - type: log
+      enabled: true
+      paths:
+        - /var/log/chattingo/websocket/*.log
+      fields:
+        category: websocket
+        service: chattingo-backend
+        environment: ${ENVIRONMENT:development}
+      fields_under_root: true
+      json.keys_under_root: true
+      json.add_error_key: true
+
+    # Processors to enrich log data
+    processors:
+    - add_host_metadata:
+        when.not.contains.tags: forwarded
+    - add_docker_metadata: 
+        host: "unix:///var/run/docker.sock"
+    - add_kubernetes_metadata:
+        host: ${NODE_NAME}
+        matchers:
+        - logs_path:
+            logs_path: "/var/log/containers/"
+    - rename:
+        fields:
+          - from: "service"
+            to: "service_name"
+        ignore_missing: true
+    - timestamp:
+        field: "@timestamp"
+        layouts:
+          - '2006-01-02T15:04:05.999999999Z07:00'
+          - '2006-01-02T15:04:05.999Z'
+          - '2006-01-02T15:04:05Z'
+        test:
+          - '2025-09-08T10:46:57.432781578+05:30'
+
+    # Elasticsearch output
+    output.elasticsearch:
+      hosts: ["elasticsearch:9200"]
+      index: "chattingo-%{[category]}-%{+yyyy.MM.dd}"
+      template.enabled: true
+      template.name: "chattingo"
+      template.pattern: "chattingo-*"
+      template.settings:
+        index.number_of_shards: 1
+        index.number_of_replicas: 0
+        index.codec: best_compression
+        index.refresh_interval: 30s
+        
+    # Elasticsearch template and lifecycle management
+    setup.template.enabled: true
+    setup.template.name: "chattingo"
+    setup.template.pattern: "chattingo-*"
+    setup.template.settings:
+      index.number_of_shards: 1
+      index.number_of_replicas: 0
+      index.codec: best_compression
+      
+    # Index Lifecycle Management
+    setup.ilm.enabled: true
+    setup.ilm.rollover_alias: "chattingo-logs"
+    setup.ilm.pattern: "chattingo-*"
+    setup.ilm.policy: "chattingo-policy"
+
+    # Kibana setup
+    setup.kibana:
+      host: "kibana:5601"
+
+    # Logging configuration for Filebeat itself
+    logging.level: info
+    logging.to_files: true
+    logging.files:
+      path: /var/log/filebeat
+      name: filebeat
+      keepfiles: 7
+      permissions: 0644
+
+    # Monitoring (optional)
+    monitoring.enabled: false
+
+---
+# Filebeat DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: chattingo
+  labels:
+    app: filebeat
+    tier: logging
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+      tier: logging
+  template:
+    metadata:
+      labels:
+        app: filebeat
+        tier: logging
+    spec:
+      serviceAccountName: filebeat
+      terminationGracePeriodSeconds: 30
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: filebeat
+        image: docker.elastic.co/beats/filebeat:8.11.0
+        args: [
+          "-c", "/etc/filebeat.yml",
+          "-e",
+        ]
+        env:
+        - name: ELASTICSEARCH_HOST
+          value: elasticsearch
+        - name: ELASTICSEARCH_PORT
+          value: "9200"
+        - name: ELASTICSEARCH_USERNAME
+          value: ""
+        - name: ELASTICSEARCH_PASSWORD
+          value: ""
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: ENVIRONMENT
+          value: "kubernetes"
+        securityContext:
+          runAsUser: 0
+          # If using Red Hat OpenShift uncomment this:
+          #privileged: true
+        resources:
+          limits:
+            memory: 200Mi
+            cpu: 100m
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/filebeat.yml
+          readOnly: true
+          subPath: filebeat.yml
+        - name: data
+          mountPath: /usr/share/filebeat/data
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: chattingo-logs
+          mountPath: /var/log/chattingo
+          readOnly: true
+        # Mount Docker socket for container metadata
+        - name: dockersock
+          mountPath: /var/run/docker.sock
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          defaultMode: 0640
+          name: filebeat-config
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: data
+        hostPath:
+          path: /var/lib/filebeat-data
+          type: DirectoryOrCreate
+      - name: dockersock
+        hostPath:
+          path: /var/run/docker.sock
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc
+
+---
+# Filebeat ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filebeat
+  namespace: chattingo
+  labels:
+    app: filebeat
+    tier: logging
+
+---
+# Filebeat ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat
+  labels:
+    app: filebeat
+    tier: logging
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - namespaces
+  - pods
+  - nodes
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups: ["apps"]
+  resources:
+    - replicasets
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources:
+    - jobs
+  verbs: ["get", "list", "watch"]
+
+---
+# Filebeat ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat
+  labels:
+    app: filebeat
+    tier: logging
+subjects:
+- kind: ServiceAccount
+  name: filebeat
+  namespace: chattingo
+roleRef:
+  kind: ClusterRole
+  name: filebeat
+  apiGroup: rbac.authorization.k8s.io

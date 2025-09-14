@@ -1,0 +1,222 @@
+---
+# Kibana Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+spec:
+  type: ClusterIP
+  selector:
+    app: kibana
+    tier: logging
+  ports:
+  - name: http
+    port: 5601
+    targetPort: 5601
+    protocol: TCP
+
+---
+# Kibana ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+data:
+  kibana.yml: |
+    server.host: "0.0.0.0"
+    server.port: 5601
+    server.name: "chattingo-kibana"
+    
+    # Elasticsearch configuration
+    elasticsearch.hosts: ["http://elasticsearch:9200"]
+    elasticsearch.requestTimeout: 30000
+    elasticsearch.shardTimeout: 30000
+    
+    # Disable security for development
+    xpack.security.enabled: false
+    xpack.encryptedSavedObjects.encryptionKey: "something_at_least_32_characters_long"
+    
+    # Default index patterns
+    kibana.defaultAppId: "discover"
+    
+    # Logging configuration
+    logging.level: info
+    logging.dest: stdout
+    logging.json: true
+    
+    # Monitoring
+    monitoring.enabled: false
+    
+    # Performance settings
+    server.maxPayloadBytes: 1048576
+    
+    # Dashboard settings
+    kibana.autocompleteTimeout: 1000
+    kibana.autocompleteTerminateAfter: 100000
+
+---
+# Kibana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+      tier: logging
+  template:
+    metadata:
+      labels:
+        app: kibana
+        tier: logging
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.11.0
+        ports:
+        - containerPort: 5601
+          name: http
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch:9200"
+        - name: SERVER_NAME
+          value: "chattingo-kibana"
+        - name: SERVER_HOST
+          value: "0.0.0.0"
+        - name: XPACK_SECURITY_ENABLED
+          value: "false"
+        - name: XPACK_MONITORING_ENABLED
+          value: "false"
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        volumeMounts:
+        - name: kibana-config
+          mountPath: /usr/share/kibana/config/kibana.yml
+          subPath: kibana.yml
+        - name: chattingo-logs
+          mountPath: /var/log/kibana
+          subPath: kibana
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+      volumes:
+      - name: kibana-config
+        configMap:
+          name: kibana-config
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc
+
+---
+# Kibana ConfigMap for Index Patterns and Dashboards
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-setup
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+data:
+  setup-kibana.sh: |
+    #!/bin/bash
+    set -e
+    
+    KIBANA_URL="http://kibana:5601"
+    
+    echo "🔄 Waiting for Kibana to be ready..."
+    until curl -s "$KIBANA_URL/api/status" | grep -q "available"; do
+        echo "⏳ Kibana not ready yet, waiting..."
+        sleep 10
+    done
+    
+    echo "✅ Kibana is ready, setting up index patterns..."
+    
+    # Create index pattern for chattingo logs
+    curl -X POST "$KIBANA_URL/api/saved_objects/index-pattern/chattingo-*" \
+      -H "Content-Type: application/json" \
+      -H "kbn-xsrf: true" \
+      -d '{
+        "attributes": {
+          "title": "chattingo-*",
+          "timeFieldName": "@timestamp"
+        }
+      }' || echo "Index pattern may already exist"
+    
+    # Set default index pattern
+    curl -X POST "$KIBANA_URL/api/kibana/settings" \
+      -H "Content-Type: application/json" \
+      -H "kbn-xsrf: true" \
+      -d '{
+        "changes": {
+          "defaultIndex": "chattingo-*"
+        }
+      }' || echo "Default index already set"
+    
+    echo "🎉 Kibana setup completed!"
+
+---
+# Job to Setup Kibana Index Patterns
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-kibana-indices
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+spec:
+  template:
+    metadata:
+      labels:
+        app: kibana
+        tier: logging
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: setup-kibana
+        image: curlimages/curl:8.4.0
+        command: ["/bin/sh"]
+        args: ["/scripts/setup-kibana.sh"]
+        volumeMounts:
+        - name: setup-scripts
+          mountPath: /scripts
+      volumes:
+      - name: setup-scripts
+        configMap:
+          name: kibana-setup
+          defaultMode: 0755

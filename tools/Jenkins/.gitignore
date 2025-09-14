@@ -1,0 +1,45 @@
+# Jenkins Files
+.env
+*.env.*
+!*.env.template
+!*.env.example
+*.env.jenkins
+
+# Credentials
+jenkins-credentials*
+*.creds
+*.credentials
+
+# Generated files
+jenkins_home/
+work/
+workspace/
+
+# Logs
+*.log
+logs/
+
+# Security files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+keystore*
+truststore*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.idea/
+.vscode/
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

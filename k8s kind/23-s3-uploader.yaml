@@ -1,0 +1,604 @@
+---
+# S3 Uploader ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-uploader-config
+  namespace: chattingo
+  labels:
+                 return {
+                'log_path': '/var/log/chattingo',
+                's3': {
+                    'bucket_name': os.getenv('S3_BUCKET', 'chattingo-logs-secure-2025'),
+                    'region': os.getenv('AWS_REGION', 'ap-south-1'),
+                    'storage_class': 'STANDARD_IA'
+                }, s3-uploader
+    tier: logging
+data:
+  settings.yaml: |
+    # Chattingo S3 Log Upload Configuration
+    log_path: "/var/log/chattingo"
+    
+    # S3 Configuration
+    s3:
+      bucket_name: "chattingo-logs-secure-2025"
+      region: "ap-south-1"  # Asia Pacific (Mumbai)
+      storage_class: "STANDARD_IA"  # Standard-Infrequent Access for cost optimization
+      
+    # Upload Configuration
+    upload:
+      # Only upload compressed archive files
+      file_patterns:
+        - "*.gz"
+      # Exclude active log files
+      exclude_patterns:
+        - "*/app/*.log"
+        - "*/auth/*.log"
+        - "*/chat/*.log"
+        - "*/error/*.log"
+        - "*/system/*.log"
+        - "*/websocket/*.log"
+      # Upload files from archive directory only
+      upload_directories:
+        - "archive/"
+      
+    # Cleanup Configuration
+    cleanup:
+      max_age_days: 30  # Keep archives locally for 30 days before cleanup
+      delete_after_upload: true
+      verify_upload: true
+      
+    # Schedule Configuration
+    schedule:
+      check_interval_minutes: 60  # Check every hour
+      cleanup_hour: 2  # Daily cleanup at 2 AM
+      
+    # Monitoring
+    monitoring:
+      enabled: true
+      metrics_port: 8080
+      health_check_port: 8081
+
+  s3-uploader.py: |
+    #!/usr/bin/env python3
+    """
+    Kubernetes-optimized S3 Log Upload Service for Chattingo
+    """
+    
+    import os
+    import time
+    import gzip
+    import logging
+    import json
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    import schedule
+    import signal
+    import sys
+    import yaml
+    from typing import List, Dict, Optional
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger('s3-uploader')
+    
+    class S3LogUploader:
+        def __init__(self, config_path='/config/settings.yaml'):
+            """Initialize S3 uploader with configuration"""
+            self.config = self.load_config(config_path)
+            self.log_path = self.config['log_path']
+            self.s3_config = self.config['s3']
+            self.upload_config = self.config['upload']
+            self.cleanup_config = self.config['cleanup']
+            self.schedule_config = self.config['schedule']
+            
+            # Import boto3 here to allow container to start without it for testing
+            try:
+                import boto3
+                from botocore.exceptions import ClientError, NoCredentialsError
+                
+                self.s3_client = boto3.client(
+                    's3',
+                    region_name=self.s3_config['region']
+                )
+                self.ClientError = ClientError
+                self.NoCredentialsError = NoCredentialsError
+                
+                # Test S3 connectivity
+                self.test_s3_connection()
+                logger.info(f"✅ S3 client initialized for bucket: {self.s3_config['bucket_name']}")
+                
+            except ImportError:
+                logger.warning("📦 boto3 not available, running in test mode")
+                self.s3_client = None
+                self.ClientError = Exception
+                self.NoCredentialsError = Exception
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize S3 client: {e}")
+                self.s3_client = None
+    
+        def load_config(self, config_path: str) -> Dict:
+            """Load configuration from YAML file"""
+            try:
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                logger.info(f"📄 Configuration loaded from {config_path}")
+                return config
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to load config from {config_path}: {e}")
+                # Return default configuration
+                return self.get_default_config()
+    
+        def get_default_config(self) -> Dict:
+            """Return default configuration"""
+            return {
+                'log_path': '/var/log/chattingo',
+                's3': {
+                    'bucket_name': os.getenv('S3_BUCKET', 'chattingo-logs'),
+                    'region': os.getenv('AWS_REGION', 'us-east-1'),
+                    'storage_class': 'STANDARD_IA'
+                },
+                'upload': {
+                    'file_patterns': ['*.gz'],
+                    'exclude_patterns': ['*/app/*.log', '*/auth/*.log'],
+                    'upload_directories': ['archive/']
+                },
+                'cleanup': {
+                    'max_age_days': 30,
+                    'delete_after_upload': True,
+                    'verify_upload': True
+                },
+                'schedule': {
+                    'check_interval_minutes': 60,
+                    'cleanup_hour': 2
+                }
+            }
+    
+        def test_s3_connection(self):
+            """Test S3 connectivity and permissions"""
+            if not self.s3_client:
+                return False
+                
+            try:
+                # Test bucket access
+                self.s3_client.head_bucket(Bucket=self.s3_config['bucket_name'])
+                return True
+            except self.NoCredentialsError:
+                logger.error("❌ AWS credentials not found")
+                return False
+            except self.ClientError as e:
+                error_code = e.response['Error']['Code']
+                if error_code == '404':
+                    logger.error(f"❌ S3 bucket not found: {self.s3_config['bucket_name']}")
+                elif error_code == '403':
+                    logger.error(f"❌ Access denied to S3 bucket: {self.s3_config['bucket_name']}")
+                else:
+                    logger.error(f"❌ S3 error: {e}")
+                return False
+    
+        def find_files_to_upload(self) -> List[Dict]:
+            """Find archive files ready for upload"""
+            log_base_path = Path(self.log_path)
+            files_to_upload = []
+            
+            if not log_base_path.exists():
+                logger.warning(f"📁 Log directory not found: {log_base_path}")
+                return files_to_upload
+            
+            # Look for files in archive directories
+            for upload_dir in self.upload_config['upload_directories']:
+                archive_path = log_base_path / upload_dir
+                
+                if not archive_path.exists():
+                    logger.debug(f"📁 Archive directory not found: {archive_path}")
+                    continue
+                
+                # Find files matching patterns
+                for pattern in self.upload_config['file_patterns']:
+                    for file_path in archive_path.glob(f"**/{pattern}"):
+                        if file_path.is_file():
+                            # Check if file should be excluded
+                            should_exclude = False
+                            for exclude_pattern in self.upload_config.get('exclude_patterns', []):
+                                if file_path.match(exclude_pattern):
+                                    should_exclude = True
+                                    break
+                            
+                            if not should_exclude:
+                                files_to_upload.append({
+                                    'file_path': file_path,
+                                    'relative_path': file_path.relative_to(log_base_path),
+                                    'size': file_path.stat().st_size,
+                                    'modified': file_path.stat().st_mtime
+                                })
+            
+            return files_to_upload
+    
+        def upload_to_s3(self, file_info: Dict) -> bool:
+            """Upload a single file to S3"""
+            if not self.s3_client:
+                logger.warning("⚠️  S3 client not available, skipping upload")
+                return True  # Return True to allow cleanup in test mode
+            
+            file_path = file_info['file_path']
+            relative_path = file_info['relative_path']
+            
+            try:
+                # Create S3 key with organized structure
+                date_str = datetime.now().strftime('%Y/%m/%d')
+                s3_key = f"chattingo-logs/{date_str}/{relative_path}"
+                
+                # Upload with metadata
+                extra_args = {
+                    'ContentType': 'application/gzip',
+                    'ContentEncoding': 'gzip',
+                    'StorageClass': self.s3_config.get('storage_class', 'STANDARD_IA'),
+                    'Metadata': {
+                        'source': 'chattingo-kubernetes',
+                        'upload_time': datetime.now().isoformat(),
+                        'original_size': str(file_info['size']),
+                        'kubernetes_namespace': os.getenv('POD_NAMESPACE', 'chattingo')
+                    }
+                }
+                
+                self.s3_client.upload_file(
+                    str(file_path),
+                    self.s3_config['bucket_name'],
+                    s3_key,
+                    ExtraArgs=extra_args
+                )
+                
+                # Verify upload if enabled
+                if self.cleanup_config.get('verify_upload', True):
+                    try:
+                        response = self.s3_client.head_object(
+                            Bucket=self.s3_config['bucket_name'],
+                            Key=s3_key
+                        )
+                        s3_size = response['ContentLength']
+                        local_size = file_info['size']
+                        
+                        if s3_size != local_size:
+                            logger.error(f"❌ Size mismatch for {file_path.name}: S3={s3_size}, Local={local_size}")
+                            return False
+                    except Exception as e:
+                        logger.error(f"❌ Failed to verify upload {file_path.name}: {e}")
+                        return False
+                
+                logger.info(f"✅ Uploaded: {file_path.name} -> s3://{self.s3_config['bucket_name']}/{s3_key}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to upload {file_path}: {e}")
+                return False
+    
+        def cleanup_uploaded_file(self, file_path: Path):
+            """Delete local file after successful upload"""
+            if self.cleanup_config.get('delete_after_upload', True):
+                try:
+                    file_path.unlink()
+                    logger.info(f"🗑️  Cleaned up local file: {file_path.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to delete local file {file_path}: {e}")
+    
+        def process_uploads(self):
+            """Main upload processing function"""
+            logger.info("🔄 Starting S3 upload cycle")
+            
+            try:
+                files_to_upload = self.find_files_to_upload()
+                
+                if not files_to_upload:
+                    logger.debug("📭 No files found for upload")
+                    return
+                
+                logger.info(f"📤 Found {len(files_to_upload)} files to upload")
+                
+                upload_count = 0
+                total_size = 0
+                
+                for file_info in files_to_upload:
+                    if self.upload_to_s3(file_info):
+                        self.cleanup_uploaded_file(file_info['file_path'])
+                        upload_count += 1
+                        total_size += file_info['size']
+                    else:
+                        logger.warning(f"⚠️  Skipping cleanup for failed upload: {file_info['file_path']}")
+                
+                logger.info(f"✅ Upload cycle completed: {upload_count}/{len(files_to_upload)} files, {total_size/1024/1024:.2f}MB")
+                
+            except Exception as e:
+                logger.error(f"💥 Error during upload processing: {e}")
+    
+        def run_health_check(self):
+            """Simple health check endpoint"""
+            logger.info("💓 Health check: Service is running")
+    
+        def run(self):
+            """Run the uploader service"""
+            logger.info("🚀 Starting Chattingo S3 Log Uploader Service")
+            logger.info(f"📂 Monitoring: {self.log_path}")
+            logger.info(f"☁️  S3 Bucket: {self.s3_config['bucket_name']}")
+            logger.info(f"⏰ Check interval: {self.schedule_config['check_interval_minutes']} minutes")
+            
+            # Schedule periodic tasks
+            interval_minutes = self.schedule_config['check_interval_minutes']
+            schedule.every(interval_minutes).minutes.do(self.process_uploads)
+            
+            cleanup_hour = self.schedule_config.get('cleanup_hour', 2)
+            schedule.every().day.at(f"{cleanup_hour:02d}:00").do(self.process_uploads)
+            
+            # Health check every 5 minutes
+            schedule.every(5).minutes.do(self.run_health_check)
+            
+            # Setup signal handlers
+            def signal_handler(signum, frame):
+                logger.info("🛑 Received shutdown signal, stopping service...")
+                sys.exit(0)
+            
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+            
+            # Run initial processing
+            self.process_uploads()
+            
+            # Main loop
+            try:
+                while True:
+                    schedule.run_pending()
+                    time.sleep(60)  # Check every minute
+            except KeyboardInterrupt:
+                logger.info("🛑 Service stopped by user")
+            except Exception as e:
+                logger.error(f"💥 Service crashed: {e}")
+                raise
+    
+    def main():
+        """Main entry point"""
+        try:
+            uploader = S3LogUploader()
+            uploader.run()
+        except Exception as e:
+            logger.error(f"💥 Failed to start S3 uploader service: {e}")
+            sys.exit(1)
+    
+    if __name__ == "__main__":
+        main()
+
+  requirements.txt: |
+    boto3==1.34.0
+    botocore==1.34.0
+    PyYAML==6.0.1
+    schedule==1.2.0
+
+---
+# S3 Uploader Secret for AWS Credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-uploader-credentials
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    tier: logging
+type: Opaque
+data:
+  # Base64 encoded AWS credentials for Mumbai region
+  # User: chattingo-s3-logs
+  # Bucket: chattingo-logs-secure-2025
+  AWS_ACCESS_KEY_ID: YOUR_AWS_ACCESS_KEY_ID_BASE64_ENCODED  # YOUR_AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY: YOUR_AWS_SECRET_ACCESS_KEY_BASE64_ENCODED  # YOUR_AWS_SECRET_ACCESS_KEY
+
+---
+# S3 Uploader Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3-uploader
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    tier: logging
+spec:
+  type: ClusterIP
+  selector:
+    app: s3-uploader
+    tier: logging
+  ports:
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+
+---
+# S3 Uploader Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3-uploader
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    tier: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3-uploader
+      tier: logging
+  template:
+    metadata:
+      labels:
+        app: s3-uploader
+        tier: logging
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: s3-uploader
+        image: python:3.11-slim
+        command: ["/bin/bash"]
+        args: ["-c", "pip install -r /app/requirements.txt && python /app/s3-uploader.py"]
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: s3-uploader-credentials
+              key: AWS_ACCESS_KEY_ID
+              optional: true
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-uploader-credentials
+              key: AWS_SECRET_ACCESS_KEY
+              optional: true
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: AWS_REGION
+              optional: true
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: S3_BUCKET
+              optional: true
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: app-code
+          mountPath: /app
+        - name: chattingo-logs
+          mountPath: /var/log/chattingo
+          readOnly: true
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; exit(0 if os.path.exists('/tmp/health') else 1)"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import os; exit(0 if os.path.exists('/tmp/health') else 1)"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: s3-uploader-config
+      - name: app-code
+        configMap:
+          name: s3-uploader-config
+          defaultMode: 0755
+      - name: chattingo-logs
+        persistentVolumeClaim:
+          claimName: chattingo-logs-pvc
+
+---
+# S3 Upload CronJob (alternative to Deployment for batch processing)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: s3-upload-batch
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    tier: logging
+    type: batch
+spec:
+  # Run every 2 hours
+  schedule: "0 */2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: s3-uploader
+            tier: logging
+            type: batch
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: s3-batch-uploader
+            image: python:3.11-slim
+            command: ["/bin/bash"]
+            args: ["-c", "pip install -r /app/requirements.txt && python -c 'from s3_uploader import S3LogUploader; uploader = S3LogUploader(); uploader.process_uploads()'"]
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-uploader-credentials
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-uploader-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: AWS_REGION
+                  optional: true
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: S3_BUCKET
+                  optional: true
+            resources:
+              requests:
+                memory: 128Mi
+                cpu: 100m
+              limits:
+                memory: 256Mi
+                cpu: 200m
+            volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: app-code
+              mountPath: /app
+            - name: chattingo-logs
+              mountPath: /var/log/chattingo
+          volumes:
+          - name: config
+            configMap:
+              name: s3-uploader-config
+          - name: app-code
+            configMap:
+              name: s3-uploader-config
+              defaultMode: 0755
+          - name: chattingo-logs
+            persistentVolumeClaim:
+              claimName: chattingo-logs-pvc

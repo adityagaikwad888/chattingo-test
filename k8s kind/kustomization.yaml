@@ -1,0 +1,152 @@
+# Kustomization file for Chattingo Kubernetes deployment
+# Manages all resources and their dependencies in the correct order
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: chattingo-platform
+  annotations:
+    description: "Complete Chattingo chat application deployment on Kind cluster"
+    version: "1.0.0"
+    maintainer: "adityagaikwad888@gmail.com"
+
+# Namespace for all resources
+namespace: chattingo
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/part-of: chattingo-platform
+  app.kubernetes.io/managed-by: kustomize
+  environment: production
+  version: "1.0.0"
+
+# Common annotations applied to all resources
+commonAnnotations:
+  deployment.kubernetes.io/author: "Chattingo DevOps Team"
+  deployment.kubernetes.io/timestamp: "2025-09-10T00:00:00Z"
+
+# Resources in deployment order
+resources:
+  # Infrastructure and Configuration
+  - 00-priority-class.yaml
+  - 01-namespace.yaml
+  - 02-mysql-pv.yaml
+  - 04-configmap.yaml
+  - 05-secrets.yaml
+  
+  # Database Layer
+  - 06-mysql-service.yaml
+  - 07-mysql-statefulset.yaml
+  
+  # Application Layer
+  - 08-backend-deployment.yaml
+  - 09-backend-service.yaml
+  - 10-frontend-deployment.yaml
+  - 11-frontend-service.yaml
+  
+  # Networking and Security
+  - 12-ingress.yaml
+  
+  # Autoscaling
+  - 13-hpa.yaml
+  - 14-vpa.yaml
+  
+  # Monitoring (in chattingo-monitoring namespace)
+  - 15-prometheus.yaml
+  - 16-grafana.yaml
+  
+  # Logging Infrastructure (ELK Stack)
+  - 18-logging-storage.yaml
+  - 19-elasticsearch.yaml
+  - 20-kibana.yaml
+  - 21-filebeat.yaml
+  - 22-log-rotation.yaml
+  - 23-s3-uploader.yaml
+  - 24-logging-monitoring.yaml
+  
+  # SSL/TLS and HTTPS Infrastructure
+  - 25-cert-manager.yaml
+  - 26-ssl-certificates.yaml
+  - 27-https-ingress.yaml
+
+# Images to update (for CI/CD integration)
+images:
+  - name: chattingo/backend
+    newTag: latest
+  - name: chattingo/frontend
+    newTag: latest
+  - name: mysql
+    newTag: "8.0.35"
+  - name: prom/prometheus
+    newTag: "v2.45.0"
+  - name: grafana/grafana
+    newTag: "10.0.0"
+  - name: docker.elastic.co/elasticsearch/elasticsearch
+    newTag: "8.11.0"
+  - name: docker.elastic.co/kibana/kibana
+    newTag: "8.11.0"
+  - name: docker.elastic.co/beats/filebeat
+    newTag: "8.11.0"
+
+# Configuration patches
+patches:
+  # Environment-specific patches
+  - target:
+      kind: Deployment
+      name: chattingo-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  
+  - target:
+      kind: Deployment
+      name: chattingo-frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+# ConfigMap and Secret generators (if needed)
+configMapGenerator:
+  - name: deployment-info
+    literals:
+      - deployment.version=1.0.0
+      - deployment.timestamp=2025-09-10T00:00:00Z
+      - deployment.environment=production
+      - deployment.cluster=kind-chattingo
+    options:
+      labels:
+        app.kubernetes.io/component: deployment-info
+
+# Resource ordering and dependencies
+# Ensures resources are created in the correct order
+transformers:
+  - |-
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: add-deployment-annotations
+    annotations:
+      config.kubernetes.io/origin: |
+        configuredIn: kustomization.yaml
+        configuredBy:
+          apiVersion: builtin
+          kind: AnnotationsTransformer
+
+# Validation and policy enforcement
+validators:
+  - |-
+    apiVersion: builtin
+    kind: LabelTransformer
+    metadata:
+      name: validate-labels
+    labels:
+      validation.kubernetes.io/validated: "true"
+
+# Build metadata
+buildMetadata:
+  - buildDate
+  - gitCommit
+  - gitTreeState
+  - gitVersion

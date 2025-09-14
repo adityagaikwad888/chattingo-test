@@ -1,0 +1,58 @@
+# Kubernetes Environment Files
+.env
+*.env.*
+!*.env.template
+!*.env.example
+
+# Secrets and Credentials
+secrets.yaml
+secrets.yml
+*secret*.yaml
+*secret*.yml
+*-secret.yaml
+*-secret.yml
+*-credentials.yaml
+*-credentials.yml
+
+# AWS Credentials or Config
+aws*.yaml
+aws*.yml
+*aws-*.yaml
+*aws-*.yml
+
+# Certificate Files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Backup and Temporary Files
+*.bak
+*.backup
+*.swp
+*~
+*.tmp
+*.temp
+
+# Local Development Files
+*local*.yaml
+*local*.yml
+*dev*.yaml
+*dev*.yml
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.vscode/
+.idea/
+
+# Generated Kubernetes Files
+kubeconfig
+*.kubeconfig
+
+# Logs
+*.log
+logs/

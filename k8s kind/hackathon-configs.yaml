@@ -1,0 +1,228 @@
+# Hackathon-Optimized ConfigMap
+# Tuned for 2-3 users, 6GB available RAM, fast performance
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chattingo-backend-config-hackathon
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo-backend
+    app.kubernetes.io/component: backend
+    environment: hackathon
+data:
+  # Database Configuration - Optimized for hackathon
+  SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-service:3306/chattingo_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata"
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
+  
+  # JWT Configuration
+  JWT_EXPIRATION: "86400000"
+  
+  # CORS Configuration - Hackathon friendly
+  CORS_ALLOWED_ORIGINS: "https://chattingo.local,http://localhost:3000,http://localhost:8080"
+  CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+  CORS_ALLOWED_HEADERS: "Origin,Content-Type,Accept,Authorization,Access-Control-Request-Method,Access-Control-Request-Headers"
+  CORS_ALLOW_CREDENTIALS: "true"
+  
+  # Logging Configuration - Reduced for hackathon
+  LOG_PATH: "/var/log/chattingo"
+  LOGGING_LEVEL_COM_CHATTINGO: "INFO"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: "WARN"
+  LOGGING_LEVEL_ORG_HIBERNATE: "ERROR"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB_SOCKET: "INFO"
+  
+  # Log Rotation - Less frequent for hackathon
+  LOG_ROTATION_ENABLED: "true"
+  LOG_ROTATION_MAX_AGE_DAYS: "3"
+  LOG_ROTATION_MAX_SIZE_MB: "50"
+  
+  # Server Configuration
+  SERVER_PORT: "8080"
+  SERVER_SERVLET_CONTEXT_PATH: "/"
+  
+  # Application Configuration - Hackathon profile
+  SPRING_APPLICATION_NAME: "chattingo-hackathon"
+  SPRING_PROFILES_ACTIVE: "hackathon"
+  
+  # Performance Configuration - Optimized for low resource
+  SPRING_TASK_EXECUTION_POOL_CORE_SIZE: "2"
+  SPRING_TASK_EXECUTION_POOL_MAX_SIZE: "5"
+  SPRING_TASK_EXECUTION_POOL_QUEUE_CAPACITY: "20"
+  SPRING_TASK_SCHEDULING_POOL_SIZE: "2"
+  
+  # JVM Configuration - Optimized for 1GB limit
+  JAVA_OPTS: "-Xmx768m -Xms384m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+UseStringDeduplication -XX:MaxGCPauseMillis=200"
+  
+  # Health Check Configuration - Minimal
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "always"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_HEALTH_LIVENESSSTATE_ENABLED: "true"
+  MANAGEMENT_HEALTH_READINESSSTATE_ENABLED: "true"
+  MANAGEMENT_METRICS_EXPORT_PROMETHEUS_ENABLED: "true"
+  
+  # AWS S3 Configuration - Mumbai region
+  AWS_REGION: "ap-south-1"
+  S3_BUCKET: "chattingo-logs-secure-2025"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config-hackathon
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    environment: hackathon
+data:
+  # MySQL Configuration - Optimized for 1GB RAM limit
+  MYSQL_DATABASE: "chattingo_db"
+  MYSQL_CHARSET: "utf8mb4"
+  MYSQL_COLLATION: "utf8mb4_unicode_ci"
+  
+  # Performance Configuration - Hackathon optimized
+  max_connections: "50"
+  innodb_buffer_pool_size: "256M"
+  innodb_log_file_size: "32M"
+  innodb_flush_log_at_trx_commit: "2"
+  innodb_flush_method: "O_DIRECT"
+  query_cache_type: "1"
+  query_cache_size: "32M"
+  slow_query_log: "0"
+  
+  # Custom MySQL configuration for hackathon
+  my.cnf: |
+    [mysql]
+    default-character-set = utf8mb4
+    
+    [mysqld]
+    # Basic Settings
+    user = mysql
+    default-storage-engine = InnoDB
+    socket = /var/lib/mysql/mysql.sock
+    pid-file = /var/lib/mysql/mysql.pid
+    
+    # Character Set
+    character-set-server = utf8mb4
+    collation-server = utf8mb4_unicode_ci
+    
+    # Connection Settings - Hackathon optimized
+    max_connections = 50
+    max_connect_errors = 100
+    table_open_cache = 1000
+    max_allowed_packet = 16M
+    binlog_cache_size = 1M
+    max_heap_table_size = 32M
+    read_buffer_size = 1M
+    read_rnd_buffer_size = 4M
+    sort_buffer_size = 2M
+    join_buffer_size = 2M
+    thread_cache_size = 4
+    query_cache_size = 32M
+    query_cache_limit = 1M
+    ft_min_word_len = 4
+    default_table_type = InnoDB
+    thread_stack = 192K
+    transaction_isolation = REPEATABLE-READ
+    tmp_table_size = 32M
+    
+    # InnoDB Settings - Memory optimized
+    innodb_buffer_pool_size = 256M
+    innodb_log_file_size = 32M
+    innodb_log_buffer_size = 4M
+    innodb_flush_log_at_trx_commit = 2
+    innodb_lock_wait_timeout = 50
+    innodb_flush_method = O_DIRECT
+    
+    # Security & Performance
+    bind-address = 0.0.0.0
+    skip-name-resolve = 1
+    slow_query_log = 0
+
+---
+# S3 Uploader Config - Reduced frequency for hackathon
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-uploader-config-hackathon
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    environment: hackathon
+data:
+  settings.yaml: |
+    # Hackathon S3 Configuration - Reduced frequency
+    log_path: "/var/log/chattingo"
+    
+    # S3 Configuration
+    s3:
+      bucket_name: "chattingo-logs-secure-2025"
+      region: "ap-south-1"
+      storage_class: "STANDARD_IA"
+      
+    # Upload Configuration - Less frequent for hackathon
+    upload:
+      file_patterns: ["*.gz"]
+      exclude_patterns: ["*/app/*.log", "*/auth/*.log"]
+      upload_directories: ["archive/"]
+      
+    # Cleanup Configuration - Faster cleanup for limited storage
+    cleanup:
+      max_age_days: 7  # Shorter retention for hackathon
+      delete_after_upload: true
+      verify_upload: true
+      
+    # Schedule Configuration - Reduced frequency
+    schedule:
+      check_interval_minutes: 360  # Every 6 hours instead of 1 hour
+      cleanup_hour: 3
+      
+    # Monitoring
+    monitoring:
+      enabled: false  # Disable for hackathon to save resources
+      metrics_port: 8080
+      health_check_port: 8081
+
+---
+# Elasticsearch Config - Hackathon optimized
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-config-hackathon
+  namespace: chattingo
+  labels:
+    app: elasticsearch
+    environment: hackathon
+data:
+  elasticsearch.yml: |
+    # Elasticsearch configuration for hackathon
+    cluster.name: "chattingo-hackathon"
+    node.name: "chattingo-es-hackathon"
+    network.host: "0.0.0.0"
+    http.port: 9200
+    discovery.type: "single-node"
+    
+    # Memory and performance settings for hackathon
+    bootstrap.memory_lock: false
+    
+    # Index settings - Optimized for single node
+    index.number_of_shards: 1
+    index.number_of_replicas: 0
+    index.refresh_interval: "30s"
+    index.max_result_window: 50000
+    
+    # Cluster settings
+    cluster.routing.allocation.disk.threshold_enabled: true
+    cluster.routing.allocation.disk.watermark.low: "85%"
+    cluster.routing.allocation.disk.watermark.high: "90%"
+    cluster.routing.allocation.disk.watermark.flood_stage: "95%"
+    
+    # Disable features not needed for hackathon
+    xpack.security.enabled: false
+    xpack.monitoring.enabled: false
+    xpack.watcher.enabled: false
+    xpack.ml.enabled: false
+    
+    # Performance optimizations
+    indices.query.bool.max_clause_count: 2048
+    search.max_buckets: 65536

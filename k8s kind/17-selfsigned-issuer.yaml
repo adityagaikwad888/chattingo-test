@@ -1,0 +1,159 @@
+# Self-Signed Certificate Issuer for Chattingo Application
+# Provides SSL/TLS certificates for secure communication
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: selfsigned-issuer
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate-issuer
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+spec:
+  selfSigned: {}
+
+---
+# Root CA Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chattingo-ca-certificate
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-ca
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+spec:
+  secretName: chattingo-ca-secret
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  isCA: true
+  commonName: "Chattingo Root CA"
+  subject:
+    organizationalUnits:
+    - "Chattingo Development"
+    organizations:
+    - "Chattingo Inc"
+    countries:
+    - "IN"
+    localities:
+    - "Mumbai"
+    provinces:
+    - "Maharashtra"
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# CA Issuer using the Root CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: chattingo-ca-issuer
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: chattingo-ca-issuer
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate-issuer
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+spec:
+  ca:
+    secretName: chattingo-ca-secret
+
+---
+# Application Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chattingo-certificate
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-cert
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+spec:
+  secretName: chattingo-tls-secret
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days
+  commonName: "chattingo.local"
+  dnsNames:
+  - "chattingo.local"
+  - "www.chattingo.local"
+  - "api.chattingo.local"
+  - "ws.chattingo.local"
+  - "*.chattingo.local"
+  subject:
+    organizationalUnits:
+    - "Chattingo Application"
+    organizations:
+    - "Chattingo Inc"
+    countries:
+    - "IN"
+    localities:
+    - "Mumbai"
+    provinces:
+    - "Maharashtra"
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+  - client auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Monitoring Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chattingo-monitoring-certificate
+  namespace: chattingo-monitoring
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/instance: chattingo-monitoring-cert
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+spec:
+  secretName: chattingo-monitoring-tls-secret
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days
+  commonName: "monitoring.chattingo.local"
+  dnsNames:
+  - "monitoring.chattingo.local"
+  - "grafana.chattingo.local"
+  - "prometheus.chattingo.local"
+  - "alertmanager.chattingo.local"
+  subject:
+    organizationalUnits:
+    - "Chattingo Monitoring"
+    organizations:
+    - "Chattingo Inc"
+    countries:
+    - "IN"
+    localities:
+    - "Mumbai"
+    provinces:
+    - "Maharashtra"
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

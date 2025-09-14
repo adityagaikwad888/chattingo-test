@@ -1,0 +1,252 @@
+---
+# Self-signed ClusterIssuer for development/testing
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+  labels:
+    app: cert-manager
+    issuer-type: selfsigned
+spec:
+  selfSigned: {}
+
+---
+# Root CA Certificate for Chattingo
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chattingo-root-ca
+  namespace: cert-manager
+  labels:
+    app: chattingo
+    cert-type: root-ca
+spec:
+  secretName: chattingo-root-ca-secret
+  isCA: true
+  commonName: "Chattingo Root CA"
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - IT Department
+    countries:
+      - IN
+    localities:
+      - Mumbai
+    provinces:
+      - Maharashtra
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# CA Issuer using the Root CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: chattingo-ca-issuer
+  labels:
+    app: chattingo
+    issuer-type: ca
+spec:
+  ca:
+    secretName: chattingo-root-ca-secret
+
+---
+# Chattingo Application Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chattingo-tls
+  namespace: chattingo
+  labels:
+    app: chattingo
+    cert-type: application
+spec:
+  secretName: chattingo-tls-secret
+  commonName: "chattingo.local"
+  dnsNames:
+    - chattingo.local
+    - www.chattingo.local
+    - api.chattingo.local
+    - kibana.chattingo.local
+    - grafana.chattingo.local
+    - prometheus.chattingo.local
+    - "*.chattingo.local"
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - Engineering
+    countries:
+      - IN
+    localities:
+      - Mumbai
+    provinces:
+      - Maharashtra
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Kibana HTTPS Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kibana-tls
+  namespace: chattingo
+  labels:
+    app: kibana
+    cert-type: service
+spec:
+  secretName: kibana-tls-secret
+  commonName: "kibana.chattingo.local"
+  dnsNames:
+    - kibana.chattingo.local
+    - kibana
+    - kibana.chattingo.svc.cluster.local
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - Logging
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Grafana HTTPS Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: chattingo-monitoring
+  labels:
+    app: grafana
+    cert-type: service
+spec:
+  secretName: grafana-tls-secret
+  commonName: "grafana.chattingo.local"
+  dnsNames:
+    - grafana.chattingo.local
+    - grafana
+    - grafana.chattingo-monitoring.svc.cluster.local
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - Monitoring
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Prometheus HTTPS Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: prometheus-tls
+  namespace: chattingo-monitoring
+  labels:
+    app: prometheus
+    cert-type: service
+spec:
+  secretName: prometheus-tls-secret
+  commonName: "prometheus.chattingo.local"
+  dnsNames:
+    - prometheus.chattingo.local
+    - prometheus
+    - prometheus.chattingo-monitoring.svc.cluster.local
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - Monitoring
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+---
+# Certificate for Elasticsearch (internal TLS)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: elasticsearch-tls
+  namespace: chattingo
+  labels:
+    app: elasticsearch
+    cert-type: internal
+spec:
+  secretName: elasticsearch-tls-secret
+  commonName: "elasticsearch.chattingo.local"
+  dnsNames:
+    - elasticsearch
+    - elasticsearch.chattingo.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  subject:
+    organizations:
+      - Chattingo Inc
+    organizationalUnits:
+      - Logging
+  duration: 2160h # 90 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  issuerRef:
+    name: chattingo-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

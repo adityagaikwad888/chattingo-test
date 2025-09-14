@@ -1,0 +1,34 @@
+# SonarQube Files
+.env
+*.env.*
+!*.env.template
+!*.env.example
+*.env.sonarqube
+
+# Data directories
+sonarqube_data/
+sonarqube_extensions/
+sonarqube_logs/
+
+# Credentials
+*.creds
+*.credentials
+
+# Logs
+*.log
+logs/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.idea/
+.vscode/
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

@@ -1,0 +1,211 @@
+---
+# Ingress for Kibana Logging Dashboard
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chattingo-logging-ingress
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: kibana
+    app.kubernetes.io/instance: chattingo-logging-ingress
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: logging-ingress
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: logging
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    
+    # cert-manager annotations for automatic certificate provisioning
+    cert-manager.io/cluster-issuer: "chattingo-ca-issuer"
+    cert-manager.io/common-name: "kibana.chattingo.local"
+    
+    # Authentication for Kibana (optional - can be removed if not needed)
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: kibana-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Kibana Dashboard - Authentication Required"
+    
+    # Security headers for Kibana
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      
+      # Allow Kibana-specific CSP
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self';" always;
+
+spec:
+  tls:
+  - hosts:
+    - kibana.chattingo.local
+    - logs.chattingo.local
+    secretName: kibana-tls-secret
+
+  rules:
+  # Kibana main dashboard
+  - host: kibana.chattingo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kibana
+            port:
+              number: 5601
+
+  # Alternative logs subdomain
+  - host: logs.chattingo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kibana
+            port:
+              number: 5601
+
+---
+# Basic Auth Secret for Kibana (optional)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kibana-basic-auth
+  namespace: chattingo
+  labels:
+    app: kibana
+    tier: logging
+type: Opaque
+data:
+  # Default credentials: admin/kibana123
+  # Generated with: htpasswd -nb admin kibana123
+  auth: YWRtaW46JGFwcjEkUjB2d0IxT0MkMUVOLllqT0svTzJDaTExMkJtMXE2LgoK
+
+---
+# Basic Auth Secret for Monitoring (if not already exists)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-basic-auth
+  namespace: chattingo-monitoring
+  labels:
+    app: monitoring
+    tier: monitoring
+type: Opaque
+data:
+  # Default credentials: admin/monitor123
+  # Generated with: htpasswd -nb admin monitor123
+  auth: YWRtaW46JGFwcjEkOEg1Rk1XRjAkbHBMVS9TaXFseWMuYTZKZGdsMXViLgoK
+
+---
+# ConfigMap for Nginx custom configuration (if needed)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-custom-config
+  namespace: chattingo
+  labels:
+    app: nginx
+    tier: infrastructure
+data:
+  custom.conf: |
+    # Custom Nginx configuration for HTTPS and security
+    
+    # SSL Configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    
+    # Hide server information
+    server_tokens off;
+    
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=api:10m rate=100r/m;
+    
+    # Compression
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1000;
+    gzip_proxied any;
+    gzip_types
+      text/plain
+      text/css
+      text/xml
+      text/javascript
+      application/javascript
+      application/xml+rss
+      application/json
+      image/svg+xml;
+
+---
+# TLS Certificate validation job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: validate-tls-certificates
+  namespace: chattingo
+  labels:
+    app: cert-validation
+    tier: security
+spec:
+  template:
+    metadata:
+      labels:
+        app: cert-validation
+        tier: security
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: cert-validator
+        image: curlimages/curl:8.4.0
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "🔐 Validating SSL certificates..."
+          
+          # Wait for certificates to be ready
+          sleep 30
+          
+          # Check if certificate secrets exist
+          if kubectl get secret chattingo-tls-secret -n chattingo; then
+            echo "✅ Main TLS certificate exists"
+          else
+            echo "❌ Main TLS certificate missing"
+            exit 1
+          fi
+          
+          if kubectl get secret kibana-tls-secret -n chattingo; then
+            echo "✅ Kibana TLS certificate exists"
+          else
+            echo "❌ Kibana TLS certificate missing"
+            exit 1
+          fi
+          
+          echo "🎉 Certificate validation completed successfully!"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"

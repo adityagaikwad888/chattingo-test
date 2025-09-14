@@ -1,0 +1,60 @@
+# MySQL Service for Chattingo Application
+# Provides stable network endpoint for database access
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: data
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+    protocol: TCP
+  sessionAffinity: None
+
+---
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless-service
+  namespace: chattingo
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+    app.kubernetes.io/version: "8.0"
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: chattingo-platform
+    app.kubernetes.io/managed-by: kubernetes
+    tier: data
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/instance: mysql-chattingo
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+    protocol: TCP
+  publishNotReadyAddresses: true

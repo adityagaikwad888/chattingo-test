@@ -1,0 +1,89 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chattingo
+
+resources:
+  - ../../00-namespace.yaml
+  - ../../01-mysql-pv.yaml
+  - ../../02-mysql-deployment.yaml
+  - ../../03-mysql-service.yaml
+  - ../../04-backend-configmap.yaml
+  - ../../05-backend-secrets.yaml
+  - ../../06-backend-pv.yaml
+  - ../../07-backend-pvc.yaml
+  - ../../08-backend-deployment.yaml
+  - ../../09-backend-service.yaml
+  - ../../10-frontend-deployment.yaml
+  - ../../11-frontend-service.yaml
+  - ../../12-ingress-controller.yaml
+  - ../../13-ingress.yaml
+  - ../../14-hpa.yaml
+  - ../../15-vpa.yaml
+  - ../../16-monitoring-namespace.yaml
+  - ../../17-prometheus-deployment.yaml
+  - ../../18-elasticsearch-deployment.yaml
+  - ../../19-kibana-deployment.yaml
+  - ../../20-filebeat-daemonset.yaml
+  - ../../21-log-rotation-cronjob.yaml
+  - ../../22-s3-uploader-deployment.yaml
+  - ../../23-logging-monitoring.yaml
+  - ../../24-log-processor-deployment.yaml
+  - ../../25-cert-manager.yaml
+  - ../../26-ssl-certificates.yaml
+  - ../../27-https-ingress.yaml
+
+# Update images to use Docker Hub
+images:
+  - name: chattingo-backend
+    newName: adityagaikwad888/chattingo-backend
+    newTag: v1.0.0
+  - name: chattingo-frontend
+    newName: adityagaikwad888/chattingo-frontend
+    newTag: v1.0.0
+  - name: chattingo-s3-uploader
+    newName: adityagaikwad888/chattingo-s3-uploader
+    newTag: v1.0.0
+  - name: log-processor
+    newName: adityagaikwad888/chattingo-log-processor
+    newTag: v1.0.0
+
+# Cloud-specific patches
+patchesStrategicMerge:
+  - cloud-patches.yaml
+
+# JSON patches for cloud configuration  
+patches:
+  # Convert nginx-ingress to LoadBalancer
+  - target:
+      kind: Service
+      name: nginx-ingress-controller
+      namespace: ingress-nginx
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+  
+  # Add cloud storage class for MySQL
+  - target:
+      kind: PersistentVolume
+      name: mysql-pv
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: fast-ssd
+  
+  # Add cloud storage class for Elasticsearch
+  - target:
+      kind: PersistentVolume  
+      name: elasticsearch-pv
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: fast-ssd
+
+# Add common labels
+commonLabels:
+  app.kubernetes.io/version: v1.0.0
+  app.kubernetes.io/managed-by: kustomize
+  environment: production

@@ -1,0 +1,349 @@
+---
+# Grafana ConfigMap for Log Monitoring Dashboards
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-logging-dashboards
+  namespace: chattingo
+  labels:
+    app: grafana
+    tier: monitoring
+    grafana_dashboard: "true"
+data:
+  chattingo-logs-overview.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Chattingo Logs Overview",
+        "tags": ["chattingo", "logs", "elk"],
+        "style": "dark",
+        "timezone": "browser",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Log Volume by Category",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum by (category) (rate(filebeat_events_total[5m]))",
+                "legendFormat": "{{category}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "palette-classic"},
+                "custom": {"displayMode": "table"},
+                "mappings": [],
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 100},
+                    {"color": "red", "value": 1000}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Error Rate by Service",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "sum by (service) (rate(filebeat_events_total{category=\"error\"}[5m]))",
+                "legendFormat": "{{service}} errors/sec"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Elasticsearch Index Status",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "elasticsearch_indices_docs{index=~\"chattingo-.*\"}",
+                "legendFormat": "{{index}}"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 24, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Log File Rotation Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "kube_job_status_succeeded{job_name=~\"log-rotation.*\"}",
+                "legendFormat": "Rotation Success"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 14}
+          },
+          {
+            "id": 5,
+            "title": "S3 Upload Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "kube_deployment_status_replicas_available{deployment=\"s3-uploader\"}",
+                "legendFormat": "S3 Uploader Available"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 6, "y": 14}
+          },
+          {
+            "id": 6,
+            "title": "Disk Usage - Log Directory",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/var/log/chattingo\"} / node_filesystem_size_bytes{mountpoint=\"/var/log/chattingo\"} * 100)",
+                "legendFormat": "Log Directory Usage %"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 12, "y": 14}
+          },
+          {
+            "id": 7,
+            "title": "Recent Critical Errors",
+            "type": "logs",
+            "targets": [
+              {
+                "expr": "{category=\"error\", severity=\"ERROR\"} |= \"CRITICAL\"",
+                "legendFormat": ""
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18}
+          }
+        ]
+      }
+    }
+
+  chattingo-elk-stack.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Chattingo ELK Stack Monitoring",
+        "tags": ["elasticsearch", "kibana", "filebeat", "infrastructure"],
+        "style": "dark",
+        "timezone": "browser",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Elasticsearch Cluster Health",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "elasticsearch_cluster_health_status",
+                "legendFormat": "Cluster Status"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Elasticsearch JVM Memory Usage",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "elasticsearch_jvm_memory_used_bytes / elasticsearch_jvm_memory_max_bytes * 100",
+                "legendFormat": "JVM Memory %"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Filebeat Events Rate",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(filebeat_events_total[5m])",
+                "legendFormat": "Events/sec"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0}
+          },
+          {
+            "id": 4,
+            "title": "Kibana Response Time",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "kibana_http_request_duration_seconds",
+                "legendFormat": "Response Time (s)"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 12, "x": 0, "y": 6}
+          },
+          {
+            "id": 5,
+            "title": "Index Operations Rate",
+            "type": "timeseries",
+            "targets": [
+              {
+                "expr": "rate(elasticsearch_indices_indexing_index_total[5m])",
+                "legendFormat": "Indexing Rate"
+              }
+            ],
+            "gridPos": {"h": 6, "w": 12, "x": 12, "y": 6}
+          }
+        ]
+      }
+    }
+
+---
+# ServiceMonitor for Elasticsearch metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: elasticsearch-metrics
+  namespace: chattingo
+  labels:
+    app: elasticsearch
+    tier: logging
+spec:
+  selector:
+    matchLabels:
+      app: elasticsearch
+      tier: logging
+  endpoints:
+  - port: http
+    path: /_prometheus/metrics
+    interval: 30s
+
+---
+# ServiceMonitor for Filebeat metrics  
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: filebeat-metrics
+  namespace: chattingo
+  labels:
+    app: filebeat
+    tier: logging
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+      tier: logging
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+
+---
+# ServiceMonitor for S3 Uploader metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: s3-uploader-metrics
+  namespace: chattingo
+  labels:
+    app: s3-uploader
+    tier: logging
+spec:
+  selector:
+    matchLabels:
+      app: s3-uploader
+      tier: logging
+  endpoints:
+  - port: health
+    path: /metrics
+    interval: 60s
+
+---
+# PrometheusRule for Log Monitoring Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: chattingo-logging-alerts
+  namespace: chattingo
+  labels:
+    app: prometheus
+    tier: monitoring
+spec:
+  groups:
+  - name: chattingo.logging.rules
+    rules:
+    - alert: ElasticsearchClusterDown
+      expr: elasticsearch_cluster_health_status != 1
+      for: 5m
+      labels:
+        severity: critical
+        service: elasticsearch
+      annotations:
+        summary: "Elasticsearch cluster is unhealthy"
+        description: "Elasticsearch cluster status is {{ $value }}"
+
+    - alert: HighErrorRate
+      expr: rate(filebeat_events_total{category="error"}[5m]) > 10
+      for: 2m
+      labels:
+        severity: warning
+        service: chattingo-backend
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value }} errors per second"
+
+    - alert: LogVolumeSpike
+      expr: rate(filebeat_events_total[5m]) > 1000
+      for: 5m
+      labels:
+        severity: warning
+        service: filebeat
+      annotations:
+        summary: "Unusual log volume spike"
+        description: "Log ingestion rate is {{ $value }} events per second"
+
+    - alert: LogRotationFailed
+      expr: kube_job_status_failed{job_name=~"log-rotation.*"} > 0
+      for: 1m
+      labels:
+        severity: warning
+        service: log-rotation
+      annotations:
+        summary: "Log rotation job failed"
+        description: "Log rotation job {{ $labels.job_name }} has failed"
+
+    - alert: S3UploaderDown
+      expr: kube_deployment_status_replicas_available{deployment="s3-uploader"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        service: s3-uploader
+      annotations:
+        summary: "S3 uploader service is down"
+        description: "S3 log uploader has no available replicas"
+
+    - alert: LogDiskSpaceHigh
+      expr: (node_filesystem_size_bytes{mountpoint="/var/log/chattingo"} - node_filesystem_avail_bytes{mountpoint="/var/log/chattingo"}) / node_filesystem_size_bytes{mountpoint="/var/log/chattingo"} * 100 > 80
+      for: 10m
+      labels:
+        severity: warning
+        service: storage
+      annotations:
+        summary: "Log directory disk space is running low"
+        description: "Log directory is {{ $value }}% full"
+
+    - alert: FilebeotHarvestingErrors
+      expr: rate(filebeat_harvester_open_files[5m]) == 0
+      for: 5m
+      labels:
+        severity: warning
+        service: filebeat
+      annotations:
+        summary: "Filebeat not harvesting any files"
+        description: "Filebeat harvester has not opened any files in the last 5 minutes"

@@ -1,0 +1,53 @@
+# Priority Classes for Chattingo Application
+# These define the priority of pods for scheduling decisions
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: chattingo-critical-priority
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/component: priority-class
+    app.kubernetes.io/part-of: chattingo-platform
+value: 1000000
+globalDefault: false
+description: "Priority class for critical Chattingo components like database"
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: chattingo-high-priority
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/component: priority-class
+    app.kubernetes.io/part-of: chattingo-platform
+value: 100000
+globalDefault: false
+description: "Priority class for high priority Chattingo components like backend API"
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: chattingo-medium-priority
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/component: priority-class
+    app.kubernetes.io/part-of: chattingo-platform
+value: 10000
+globalDefault: false
+description: "Priority class for medium priority Chattingo components like frontend"
+
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: chattingo-low-priority
+  labels:
+    app.kubernetes.io/name: chattingo
+    app.kubernetes.io/component: priority-class
+    app.kubernetes.io/part-of: chattingo-platform
+value: 1000
+globalDefault: false
+description: "Priority class for low priority Chattingo components like monitoring and logging"

@@ -1,0 +1,49 @@
+# Python S3 Uploader
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment
+.env
+*.env.*
+!*.env.template
+!*.env.example
+
+# AWS Credentials or Config
+aws-credentials
+.aws/
+credentials
+.credentials
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.bak
+*.swp
+*~
+*.tmp
+*.temp

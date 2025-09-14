@@ -1,0 +1,36 @@
+# Trivy Files
+.env
+*.env.*
+!*.env.template
+!*.env.example
+
+# Scan reports
+*-results.json
+*-results.txt
+*-report.html
+*-report.json
+results/
+reports/
+
+# Cached data
+.trivy/
+.cache/
+
+# Logs
+*.log
+logs/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.idea/
+.vscode/
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

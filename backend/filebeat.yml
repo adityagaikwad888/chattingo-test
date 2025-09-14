@@ -1,0 +1,106 @@
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/app/*.log
+  fields:
+    category: application
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/auth/*.log
+  fields:
+    category: authentication
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/chat/*.log
+  fields:
+    category: chat
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/error/*.log
+  fields:
+    category: error
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/system/*.log
+  fields:
+    category: system
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/chattingo/websocket/*.log
+  fields:
+    category: websocket
+    service: chattingo-backend
+  fields_under_root: true
+  json.keys_under_root: true
+  json.add_error_key: true
+
+processors:
+- add_host_metadata:
+    when.not.contains.tags: forwarded
+- add_docker_metadata: ~
+- rename:
+    fields:
+      - from: "service"
+        to: "service_name"
+    ignore_missing: true
+- timestamp:
+    field: "@timestamp"
+    layouts:
+      - '2006-01-02T15:04:05.999999999Z07:00'
+      - '2006-01-02T15:04:05Z'
+    test:
+      - '2025-09-08T10:46:57.432781578+05:30'
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "chattingo-%{[category]}-%{+yyyy.MM.dd}"
+
+setup.template.enabled: true
+setup.template.name: "chattingo"
+setup.template.pattern: "chattingo-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+  index.codec: best_compression
+
+setup.kibana:
+  host: "kibana:5601"
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644

@@ -1,0 +1,370 @@
+# ==================================
+# MASTER .GITIGNORE FOR CHATTINGO
+# ==================================
+
+# ===== SECRETS & CREDENTIALS =====
+*.env
+*.env.*
+!*.env.template
+!*.env.example
+.env.local
+.env.production
+.env.development
+.env.staging
+.env.test
+
+# AWS & Cloud Credentials
+aws-credentials
+.aws/
+credentials
+.credentials
+
+# JWT & API Keys
+jwt-secret*
+api-keys*
+secrets.yaml
+secrets.yml
+secret-*.yaml
+secret-*.yml
+
+# Certificates & Keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+keystore*
+truststore*
+
+# ===== JAVA/MAVEN (Backend) =====
+target/
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+.mvn/wrapper/MavenWrapperDownloader.java
+
+# Maven
+.m2/
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# STS (Spring Tool Suite)
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+
+# Eclipse
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# ===== NODE.JS/NPM (Frontend) =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Storybook build outputs
+.out
+.storybook-out
+storybook-static
+
+# Vite
+dist-ssr
+*.local
+
+# Rollup.js default build output
+dist/
+
+# Svelte kit
+.svelte-kit
+
+# ===== DOCKER & CONTAINERS =====
+docker-compose.override.yml
+docker-compose.override.yaml
+.dockerignore
+Dockerfile.local
+Dockerfile.dev
+.docker/
+
+# ===== LOGS & MONITORING =====
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Application logs
+app.log
+error.log
+access.log
+application-*.log
+spring.log
+
+# ===== DATABASES =====
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+dump.rdb
+*.dump
+
+# MySQL
+mysql-data/
+*.sql
+
+# ===== TESTING =====
+.coverage
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Jest
+coverage/
+.nyc_output
+
+# ===== EDITORS & IDEs =====
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===== OS GENERATED =====
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===== KUBERNETES & DEPLOYMENT =====
+# Helm
+charts/*.tgz
+.helm/
+
+# Kustomize
+kustomization.yaml.bak
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+
+# ===== CI/CD =====
+# Jenkins
+.jenkins/
+jenkins_home/
+
+# GitHub Actions secrets (if any local files)
+.github/secrets/
+
+# ===== TEMPORARY & BUILD =====
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+build/
+dist/
+out/
+
+# ===== PROJECT SPECIFIC =====
+# Chattingo specific files
+uploads/
+static/uploads/
+media/
+.media/
+
+# Backup files
+*.backup
+*.bak
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== MONITORING & METRICS =====
+# Elasticsearch
+elasticsearch_data/
+
+# ===== CACHE =====
+.cache/
+*.cache
+.parcel-cache/
+.eslintcache
+.stylelintcache
