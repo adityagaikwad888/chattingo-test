@@ -104,7 +104,7 @@ services:
       - elasticsearch
       - chattingo-backend
     volumes:
-      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./backend/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - /var/log/chattingo:/var/log/chattingo:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
